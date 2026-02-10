@@ -340,7 +340,7 @@ function New-UsageAnalyticsReport {
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 Visio Usage Analytics Report</h1>
+            <h1>Visio Usage Analytics Report</h1>
             <p>Detailed usage patterns and activity tracking</p>
         </div>
         
@@ -363,7 +363,12 @@ function New-UsageAnalyticsReport {
     foreach ($computer in $UsageData) {
         if ($computer.IsOnline) {
             $running = if ($computer.ProcessRunning) { '<span class="status-active">● Running</span>' } else { '<span class="status-inactive">Not Running</span>' }
-            $user = $computer.ActiveUser ?? "N/A"
+			$user = if ($null -ne $computer.ActiveUser -and $computer.ActiveUser -ne "") {
+				$computer.ActiveUser
+			} else {
+				"N/A"
+			}
+
             $docCount = $computer.RecentDocuments.Count
 
             $html += @"

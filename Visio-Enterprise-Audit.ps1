@@ -283,7 +283,7 @@ function Invoke-VisioScan {
         $results += $result
 
         [int]$scanned++
-        $installed = if ($result.VisioInstalled) { "✓ Visio" } else { "✗ No Visio" }
+        $installed = if ($result.VisioInstalled) { "[X] Visio" } else { "[ ] No Visio" }
         $status = if ($result.IsOnline) { "Online" } else { "Offline" }
 
         Write-Progress -Activity "Scanning Computers" -Status "$scanned/$($Computers.Count) - $($result.ComputerName) [$status] $installed" -PercentComplete (($scanned / $Computers.Count) * 100)
@@ -318,14 +318,14 @@ function ConvertTo-HtmlReport {
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 40px 20px;
         }
-        
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -334,7 +334,7 @@ function ConvertTo-HtmlReport {
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             overflow: hidden;
         }
-        
+
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -490,7 +490,7 @@ function ConvertTo-HtmlReport {
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 Visio Installation Audit Report</h1>
+            <h1>Visio Installation Audit Report</h1>
             <p>Enterprise-wide scan of Visio installations across domain computers</p>
         </div>
         
@@ -515,7 +515,7 @@ function ConvertTo-HtmlReport {
         
         <div class="content">
             <div class="section">
-                <h2>✓ Computers with Visio Installed</h2>
+                <h2>Computers with Visio Installed</h2>
                 $(if ($visioInstalled.Count -gt 0) {
                     @"
                     <table>
@@ -536,11 +536,11 @@ function ConvertTo-HtmlReport {
                         @"
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
-                                <td><span class="status-online">● Online</span></td>
+                                <td><span class="status-online">Online</span></td>
                                 <td>$($computer.VisioVersion)</td>
                                 <td>$office365Badge</td>
-                                <td>$($computer.LastUsedDate ?? 'N/A')</td>
-                                <td style="font-size: 0.9em; color: #666;">$($computer.InstallPath ?? 'Standard')</td>
+                                <td>$(if ($computer.LastUsedDate) { $computer.LastUsedDate } else { 'N/A' })</td>
+                                <td style="font-size: 0.9em; color: #666;">$(if ($computer.InstallPath) { $computer.InstallPath } else { 'Standard' })</td>
                             </tr>
 "@
                     }
@@ -558,7 +558,7 @@ function ConvertTo-HtmlReport {
             </div>
             
             <div class="section">
-                <h2>✗ Computers without Visio</h2>
+                <h2>Computers without Visio</h2>
                 $(if (($visioNotInstalled | Where-Object { $_.IsOnline }).Count -gt 0) {
                     @"
                     <table>
@@ -575,7 +575,7 @@ function ConvertTo-HtmlReport {
                         @"
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
-                                <td><span class="status-online">● Online</span></td>
+                                <td><span class="status-online">Online</span></td>
                                 <td>N/A</td>
                             </tr>
 "@
@@ -594,7 +594,7 @@ function ConvertTo-HtmlReport {
             </div>
             
             <div class="section">
-                <h2>⚠ Offline Computers</h2>
+                <h2>Offline Computers</h2>
                 $(if ($offline.Count -gt 0) {
                     @"
                     <table>
@@ -610,7 +610,7 @@ function ConvertTo-HtmlReport {
                         @"
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
-                                <td><span class="status-offline">● Offline</span></td>
+                                <td><span class="status-offline">Offline</span></td>
                             </tr>
 "@
                     }
@@ -651,11 +651,11 @@ function Export-ResultsToCSV {
         @{ Name = "ComputerName"; Expression = { $_.ComputerName } },
         @{ Name = "IsOnline"; Expression = { if ($_.IsOnline) { "Yes" } else { "No" } } },
         @{ Name = "VisioInstalled"; Expression = { if ($_.VisioInstalled) { "Yes" } else { "No" } } },
-        @{ Name = "VisioVersion"; Expression = { $_.VisioVersion ?? "N/A" } },
+        @{ Name = "VisioVersion"; Expression = { if ($_.VisioVersion) { $_.VisioVersion } else { "N/A" } } },
         @{ Name = "Office365"; Expression = { if ($_.Office365Install) { "Yes" } else { "No" } } },
-        @{ Name = "LastUsedDate"; Expression = { $_.LastUsedDate ?? "N/A" } },
-        @{ Name = "InstallPath"; Expression = { $_.InstallPath ?? "N/A" } },
-        @{ Name = "Error"; Expression = { $_.Error ?? "None" } } |
+        @{ Name = "LastUsedDate"; Expression = { if ($_.LastUsedDate) { $_.LastUsedDate } else { "N/A" } } },
+        @{ Name = "InstallPath"; Expression = { if ($_.InstallPath) { $_.InstallPath } else { "N/A" } } },
+        @{ Name = "Error"; Expression = { if ($_.Error) { $_.Error } else { "None" } } } |
     Export-Csv -Path $OutputFile -NoTypeInformation -Encoding UTF8
 
     Write-Host "[+] CSV report saved: $OutputFile" -ForegroundColor Green

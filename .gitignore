@@ -1,0 +1,12 @@
+# .gitignore - Specifies intentionally untracked files to ignore in Git repositories.
+
+# =============================================================================
+# SECURITY - Sensitive Files (NEVER commit these!)
+# =============================================================================
+
+.githhub/       # GitHub Actions workflow files (if using GitHub Actions)
+.vscode/         # Visual Studio Code settings and workspace files
+error.log        # Log files that may contain sensitive information
+error.txt        # Text files that may contain sensitive information
+errors.md         # Markdown files that may contain sensitive information
+.errors/        # Error files
