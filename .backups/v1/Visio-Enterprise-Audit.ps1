@@ -8,11 +8,11 @@
 
 .DESCRIPTION
     This script queries Active Directory for all computers, then uses WMI/Registry
-    to check for Visio installations. Supports Office 365 and Office 2019 only.
+    to check for Visio installations. Supports Office 365, 2019, 2016, 2013.
     Generates CSV and HTML reports.
 
 .PARAMETER OutputPath
-    Directory to save reports (default: script directory\Output\VisioAudit)
+    Directory to save reports (default: C:\Temp\VisioAudit)
 
 .PARAMETER ComputerFilter
     Filter for AD computer search (default: all enabled computers)
@@ -20,16 +20,13 @@
 .PARAMETER ThreadCount
     Number of parallel jobs (default: 10)
 
-.PARAMETER SearchBase
-    LDAP path to the OU to search for computers
-
 .EXAMPLE
     .\Visio-Enterprise-Audit.ps1 -OutputPath "C:\Reports" -ThreadCount 20
 #>
 
 param(
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath,
+    [string]$OutputPath = "C:\Temp\VisioAudit",
 
     [Parameter(Mandatory = $false)]
     [string]$ComputerFilter = "*",
@@ -38,62 +35,32 @@ param(
     [int]$ThreadCount = 10,
 
     [Parameter(Mandatory = $false)]
-    [switch]$IncludeOfflineComputers = $false,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ComputerPrefix = "GOT",
-
-    # Target specific OU within the domain
-    [Parameter(Mandatory = $false)]
-    [string]$SearchBase
+    [switch]$IncludeOfflineComputers = $false
 )
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-# Determine script directory for output operations
-if ($PSScriptRoot -or $MyInvocation.MyCommand.Path) {
-    $ScriptDirectory = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-}
-else {
-    Write-Error "Unable to determine script location. Exiting."
-    exit 1
-}
-
-# Set default OutputPath if not provided
-if ([string]::IsNullOrEmpty($OutputPath)) {
-    $OutputPath = "$ScriptDirectory\Output\VisioAudit"
-}
-
 $ErrorActionPreference = "SilentlyContinue"
 $WarningPreference = "SilentlyContinue"
 
-# Set default SearchBase if not provided
-if ([string]::IsNullOrEmpty($SearchBase)) {
-    $SearchBase = "OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra"
-}
-
-# Visio installation paths for all supported versions
+# Office 365 and Office 2019/2016 installation paths
 $VisioPaths = @(
-    "C:\Program Files\Microsoft Office\root\Office16\VISIO.EXE",       # Office 365/2021/2019 x64
-    "C:\Program Files\Microsoft Office\root\Office15\VISIO.EXE",       # Visio 2019
-    "C:\Program Files\Microsoft Office\Office16\VISIO.EXE",             # Standalone 2016/2019
-    "C:\Program Files\Microsoft Office\Office15\VISIO.EXE",             # Visio 2019 Standalone
-    "C:\Program Files (x86)\Microsoft Office\root\Office16\VISIO.EXE",  # Office 365/2021/2019 x86
-    "C:\Program Files (x86)\Microsoft Office\root\Office15\VISIO.EXE",  # Visio 2019 x86
-    "C:\Program Files (x86)\Microsoft Office\Office16\VISIO.EXE",       # Standalone x86
-    "C:\Program Files (x86)\Microsoft Office\Office15\VISIO.EXE"        # Visio 2019 Standalone x86
+    "C:\Program Files\Microsoft Office\root\Office16\VISIO.EXE",        # Office 365/2019
+    "C:\Program Files (x86)\Microsoft Office\root\Office16\VISIO.EXE",  # Office 365/2019 32-bit
+    "C:\Program Files\Microsoft Office\Office16\VISIO.EXE",             # Office 2016
+    "C:\Program Files (x86)\Microsoft Office\Office16\VISIO.EXE",       # Office 2016 32-bit
+    "C:\Program Files\Microsoft Office\Office15\VISIO.EXE",             # Office 2013
+    "C:\Program Files (x86)\Microsoft Office\Office15\VISIO.EXE"        # Office 2013 32-bit
 )
 
-# Registry paths for detecting all Office/Visio versions (x64 and x86)
+# Registry paths for detecting Office 365
 $RegistryPaths = @(
-    "HKLM:\Software\Microsoft\Office\16.0\Common\InstallRoot",                 # Office 365/2021/2019
-    "HKLM:\Software\Microsoft\Office\15.0\Common\InstallRoot",                  # Visio 2019
-    "HKLM:\Software\Microsoft\Visio\InstallRoot",                                # Standalone Visio
-    "HKLM:\Software\Wow6432Node\Microsoft\Office\16.0\Common\InstallRoot",      # Office 365/2021/2019 x86
-    "HKLM:\Software\Wow6432Node\Microsoft\Office\15.0\Common\InstallRoot",      # Visio 2019 x86
-    "HKLM:\Software\Wow6432Node\Microsoft\Visio\InstallRoot"                    # Standalone Visio x86
+    "HKLM:\Software\Microsoft\Office\16.0\Common\InstallRoot",         # Office 365/2019/2016
+    "HKLM:\Software\Wow6432Node\Microsoft\Office\16.0\Common\InstallRoot",
+    "HKLM:\Software\Microsoft\Office\15.0\Common\InstallRoot",         # Office 2013
+    "HKLM:\Software\Wow6432Node\Microsoft\Office\15.0\Common\InstallRoot"
 )
 
 # ============================================================================
@@ -101,45 +68,21 @@ $RegistryPaths = @(
 # ============================================================================
 
 function Initialize-AuditEnvironment {
-    try {
-        if (!(Test-Path $OutputPath)) {
-            New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
-        }
-        Write-Host "Output directory: $OutputPath" -ForegroundColor Green
+    if (!(Test-Path $OutputPath)) {
+        New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
     }
-    catch {
-        Write-Error "Failed to create output directory '$OutputPath': $_.Exception.Message"
-        Write-Error "Please check permissions and path validity."
-        exit 1
-    }
+    Write-Host "Output directory: $OutputPath" -ForegroundColor Green
 }
 
 function Get-DomainComputers {
     param(
-        [string]$Filter = "*",
-        [string]$SearchBase,
-        [string]$ComputerPrefix = "GOT"
+        [string]$Filter = "*"
     )
 
     Write-Host "`n[*] Querying Active Directory for computers..." -ForegroundColor Cyan
-    Write-Host "[*] Targeting OU: $SearchBase" -ForegroundColor Yellow
-    Write-Host "[*] Using computer prefix filter: $ComputerPrefix*" -ForegroundColor Yellow
     
     try {
-        # Build filter using ComputerPrefix
-        $prefixFilter = "$ComputerPrefix*"
-        $getADParams = @{
-            Filter      = "Name -like '$prefixFilter'"
-            Properties  = @("Name", "OperatingSystem", "LastLogonDate")
-            ErrorAction = "Stop"
-            SearchBase  = $SearchBase
-        }
-        
-        if ($Domain) {
-            $getADParams.Server = $Domain
-        }
-        
-        $computers = Get-ADComputer @getADParams |
+        $computers = Get-ADComputer -Filter "Name -like '$Filter'" -Properties Name, OperatingSystem, LastLogonDate |
             Where-Object { $_.OperatingSystem -like "*Windows*" } |
             Sort-Object -Property Name
 
@@ -173,7 +116,6 @@ function Get-VisioInstallationInfo {
         IsOnline          = $false
         VisioInstalled    = $false
         VisioVersion      = $null
-        VisioEdition      = $null  # Standard, Professional, or null
         InstallPath       = $null
         LastAccessTime    = $null
         LastUsedDate      = $null
@@ -191,8 +133,7 @@ function Get-VisioInstallationInfo {
     $result.IsOnline = $true
 
     try {
-        # Initialize session variable before try block
-        $session = $null
+        # Check installed software via WMI
         $session = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
 
         # Query installed Office products
@@ -208,35 +149,11 @@ function Get-VisioInstallationInfo {
             $result.OfficeVersion = $office365.Name
         }
 
-        # Check for Visio specifically and categorize by edition
+        # Check for Visio specifically
         $visioProduct = $officeProducts | Where-Object { $_.Name -match "Visio" }
         if ($visioProduct) {
             $result.VisioInstalled = $true
             $result.VisioVersion = $visioProduct.Version
-            
-            # Determine edition type
-            if ($visioProduct.Name -match "Professional") {
-                $result.VisioEdition = "Professional"
-            }
-            elseif ($visioProduct.Name -match "Standard") {
-                $result.VisioEdition = "Standard"
-            }
-            else {
-                # Try to detect from version number
-                $versionParts = $visioProduct.Version.Split('.')
-                if ($versionParts.Count -ge 2) {
-                    $majorVersion = [int]$versionParts[0]
-                    $buildNumber = if ($versionParts.Count -ge 2) { [int]$versionParts[1] } else { 0 }
-                    
-                    # Office 365/2021 builds typically higher
-                    if ($buildNumber -ge 13000) {
-                        $result.VisioEdition = "Professional"  # Default for 2021
-                    }
-                    elseif ($majorVersion -eq 16) {
-                        $result.VisioEdition = "Professional"  # Assume Professional for 2016/2019
-                    }
-                }
-            }
         }
 
         # Check file system for Visio executable
@@ -339,6 +256,7 @@ function Invoke-VisioScan {
     $scanned = 0
 
     # Use RunspacePool for parallel processing
+    # Use RunspacePool for parallel processing
     $runspacePool = [runspacefactory]::CreateRunspacePool(1, $ThreadCount)
     $runspacePool.Open()
 
@@ -347,125 +265,8 @@ function Invoke-VisioScan {
     foreach ($computer in $Computers) {
         $scriptBlock = {
             param($ComputerName, $VisioPaths, $RegistryPaths)
-            
-            # Inline function logic for runspace scope compatibility
-            $result = @{
-                ComputerName      = $ComputerName
-                IsOnline          = $false
-                VisioInstalled    = $false
-                VisioVersion      = $null
-                VisioEdition      = $null  # Standard, Professional, or null
-                InstallPath       = $null
-                LastAccessTime    = $null
-                LastUsedDate      = $null
-                Office365Install  = $false
-                OfficeVersion     = $null
-                Error             = $null
-            }
-            
-            # Test connectivity
-            $ping = Test-Connection -ComputerName $ComputerName -Count 1 -Quiet
-            if (!$ping) {
-                $result.Error = "Computer offline"
-                return $result
-            }
-            
-            $result.IsOnline = $true
-            
-            try {
-                # Check installed software via WMI
-                $session = $null
-                $session = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
 
-                # Query installed Office products
-                $officeProducts = Get-CimInstance -CimSession $session `
-                    -ClassName Win32_Product `
-                    -Filter "Name LIKE '%Office%' OR Name LIKE '%Visio%'" `
-                    -ErrorAction SilentlyContinue
-
-                # Check for Office 365 subscription
-                $office365 = $officeProducts | Where-Object { $_.Name -match "Microsoft 365|Office 365" }
-                if ($office365) {
-                    $result.Office365Install = $true
-                    $result.OfficeVersion = $office365.Name
-                }
-
-                # Check for Visio specifically and categorize by edition
-                $visioProduct = $officeProducts | Where-Object { $_.Name -match "Visio" }
-                if ($visioProduct) {
-                    $result.VisioInstalled = $true
-                    $result.VisioVersion = $visioProduct.Version
-                    
-                    # Determine edition type
-                    if ($visioProduct.Name -match "Professional") {
-                        $result.VisioEdition = "Professional"
-                    }
-                    elseif ($visioProduct.Name -match "Standard") {
-                        $result.VisioEdition = "Standard"
-                    }
-                    else {
-                        # Try to detect from version number
-                        $versionParts = $visioProduct.Version.Split('.')
-                        if ($versionParts.Count -ge 2) {
-                            $majorVersion = [int]$versionParts[0]
-                            $buildNumber = if ($versionParts.Count -ge 2) { [int]$versionParts[1] } else { 0 }
-                            
-                            # Office 365/2021 builds typically higher
-                            if ($buildNumber -ge 13000) {
-                                $result.VisioEdition = "Professional"  # Default for 2021
-                            }
-                            elseif ($majorVersion -eq 16) {
-                                $result.VisioEdition = "Professional"  # Assume Professional for 2016/2019
-                            }
-                        }
-                    }
-                }
-
-                # Check file system for Visio executable
-                foreach ($path in $VisioPaths) {
-                    $remoteFile = "\\$ComputerName\$($path -replace ':', '$')"
-                    
-                    if (Test-Path $remoteFile -ErrorAction SilentlyContinue) {
-                        $fileInfo = Get-Item $remoteFile -ErrorAction SilentlyContinue
-                        if ($fileInfo) {
-                            $result.VisioInstalled = $true
-                            $result.InstallPath = $path
-                            $result.LastAccessTime = $fileInfo.LastAccessTime
-                            $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
-                            break
-                        }
-                    }
-                }
-
-                # Check registry for installation details
-                foreach ($regPath in $RegistryPaths) {
-                    try {
-                        $regKey = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey(
-                            [Microsoft.Win32.RegistryHive]::LocalMachine,
-                            $ComputerName
-                        )
-                        
-                        $key = $regKey.OpenSubKey($regPath.Replace("HKLM:\", ""))
-                        if ($key) {
-                            $installPath = $key.GetValue("Path")
-                            if ($installPath) {
-                                $result.InstallPath = $installPath
-                                $result.Office365Install = $true
-                            }
-                        }
-                    }
-                    catch {
-                        # Continue to next registry path
-                    }
-                }
-
-                Remove-CimSession $session
-            }
-            catch {
-                $result.Error = "WMI access denied or unavailable"
-            }
-            
-            return $result
+            Get-VisioInstallationInfo -ComputerName $ComputerName -Paths $VisioPaths -RegPaths $RegistryPaths
         }
 
         $job = [powershell]::Create().AddScript($scriptBlock).AddArgument($computer.Name).AddArgument($VisioPaths).AddArgument($RegistryPaths)
@@ -519,7 +320,7 @@ function ConvertTo-HtmlReport {
         }
 
         body {
-            font-family: -apple-system, BlinkMacMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 40px 20px;
@@ -707,7 +508,7 @@ function ConvertTo-HtmlReport {
                 <div class="metric-label">Offline</div>
             </div>
             <div class="metric">
-                <div class="metric-value">$(if ($Results.Count -gt 0) { ($visioInstalled.Count / $Results.Count * 100).ToString('F1') } else { '0' })%</div>
+                <div class="metric-value">$(($visioInstalled.Count / $Results.Count * 100).ToString("F1"))%</div>
                 <div class="metric-label">Installation Rate</div>
             </div>
         </div>
@@ -715,17 +516,14 @@ function ConvertTo-HtmlReport {
         <div class="content">
             <div class="section">
                 <h2>Computers with Visio Installed</h2>
-"@
-
-    if ($visioInstalled.Count -gt 0) {
-        $html += @"
+                $(if ($visioInstalled.Count -gt 0) {
+                    @"
                     <table>
                         <thead>
                             <tr>
                                 <th>Computer Name</th>
                                 <th>Status</th>
                                 <th>Visio Version</th>
-                                <th>Edition</th>
                                 <th>Office 365</th>
                                 <th>Last Used</th>
                                 <th>Install Path</th>
@@ -733,42 +531,36 @@ function ConvertTo-HtmlReport {
                         </thead>
                         <tbody>
 "@
-        foreach ($computer in $visioInstalled) {
-            $office365Badge = if ($computer.Office365Install) { '<span class="badge badge-office365">Office 365</span>' } else { '<span class="badge badge-warning">Desktop</span>' }
-            $html += @"
+                    foreach ($computer in $visioInstalled) {
+                        $office365Badge = if ($computer.Office365Install) { '<span class="badge badge-office365">Office 365</span>' } else { '<span class="badge badge-warning">Desktop</span>' }
+                        @"
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
                                 <td><span class="status-online">Online</span></td>
                                 <td>$($computer.VisioVersion)</td>
-                                <td>$(if ($computer.VisioEdition) { $computer.VisioEdition } else { 'Unknown' })</td>
                                 <td>$office365Badge</td>
                                 <td>$(if ($computer.LastUsedDate) { $computer.LastUsedDate } else { 'N/A' })</td>
                                 <td style="font-size: 0.9em; color: #666;">$(if ($computer.InstallPath) { $computer.InstallPath } else { 'Standard' })</td>
                             </tr>
 "@
-        }
-        $html += @"
+                    }
+                    @"
                         </tbody>
                     </table>
 "@
-    }
-    else {
-        $html += @"
+                } else {
+                    @"
                     <div class="empty-state">
                         <p>No computers with Visio installed found</p>
                     </div>
 "@
-    }
-
-    $html += @"
+                })
             </div>
             
             <div class="section">
                 <h2>Computers without Visio</h2>
-"@
-
-    if (($visioNotInstalled | Where-Object { $_.IsOnline }).Count -gt 0) {
-        $html += @"
+                $(if (($visioNotInstalled | Where-Object { $_.IsOnline }).Count -gt 0) {
+                    @"
                     <table>
                         <thead>
                             <tr>
@@ -779,37 +571,32 @@ function ConvertTo-HtmlReport {
                         </thead>
                         <tbody>
 "@
-        foreach ($computer in $visioNotInstalled | Where-Object { $_.IsOnline }) {
-            $html += @"
+                    foreach ($computer in $visioNotInstalled | Where-Object { $_.IsOnline }) {
+                        @"
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
                                 <td><span class="status-online">Online</span></td>
                                 <td>N/A</td>
                             </tr>
 "@
-        }
-        $html += @"
+                    }
+                    @"
                         </tbody>
                     </table>
 "@
-    }
-    else {
-        $html += @"
+                } else {
+                    @"
                     <div class="empty-state">
                         <p>All online computers checked</p>
                     </div>
 "@
-    }
-
-    $html += @"
+                })
             </div>
             
             <div class="section">
                 <h2>Offline Computers</h2>
-"@
-
-    if ($offline.Count -gt 0) {
-        $html += @"
+                $(if ($offline.Count -gt 0) {
+                    @"
                     <table>
                         <thead>
                             <tr>
@@ -819,28 +606,25 @@ function ConvertTo-HtmlReport {
                         </thead>
                         <tbody>
 "@
-        foreach ($computer in $offline) {
-            $html += @"
+                    foreach ($computer in $offline) {
+                        @"
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
                                 <td><span class="status-offline">Offline</span></td>
                             </tr>
 "@
-        }
-        $html += @"
+                    }
+                    @"
                         </tbody>
                     </table>
 "@
-    }
-    else {
-        $html += @"
+                } else {
+                    @"
                     <div class="empty-state">
                         <p>All computers are online</p>
                     </div>
 "@
-    }
-
-    $html += @"
+                })
             </div>
         </div>
         
@@ -868,7 +652,6 @@ function Export-ResultsToCSV {
         @{ Name = "IsOnline"; Expression = { if ($_.IsOnline) { "Yes" } else { "No" } } },
         @{ Name = "VisioInstalled"; Expression = { if ($_.VisioInstalled) { "Yes" } else { "No" } } },
         @{ Name = "VisioVersion"; Expression = { if ($_.VisioVersion) { $_.VisioVersion } else { "N/A" } } },
-        @{ Name = "VisioEdition"; Expression = { if ($_.VisioEdition) { $_.VisioEdition } else { "Unknown" } } },
         @{ Name = "Office365"; Expression = { if ($_.Office365Install) { "Yes" } else { "No" } } },
         @{ Name = "LastUsedDate"; Expression = { if ($_.LastUsedDate) { $_.LastUsedDate } else { "N/A" } } },
         @{ Name = "InstallPath"; Expression = { if ($_.InstallPath) { $_.InstallPath } else { "N/A" } } },
@@ -884,14 +667,12 @@ function Get-AuditSummary {
     )
 
     $summary = @{
-        TotalComputers        = $Results.Count
-        OnlineComputers       = ($Results | Where-Object { $_.IsOnline }).Count
-        OfflineComputers      = ($Results | Where-Object { !$_.IsOnline }).Count
-        VisioInstalled        = ($Results | Where-Object { $_.VisioInstalled }).Count
-        VisioStandard         = ($Results | Where-Object { $_.VisioEdition -eq "Standard" }).Count
-        VisioProfessional     = ($Results | Where-Object { $_.VisioEdition -eq "Professional" }).Count
-        Office365Installs     = ($Results | Where-Object { $_.Office365Install }).Count
-        AccessErrors          = ($Results | Where-Object { $_.Error }).Count
+        TotalComputers    = $Results.Count
+        OnlineComputers   = ($Results | Where-Object { $_.IsOnline }).Count
+        OfflineComputers  = ($Results | Where-Object { !$_.IsOnline }).Count
+        VisioInstalled    = ($Results | Where-Object { $_.VisioInstalled }).Count
+        Office365Installs = ($Results | Where-Object { $_.Office365Install }).Count
+        AccessErrors      = ($Results | Where-Object { $_.Error }).Count
     }
 
     return $summary
@@ -902,17 +683,15 @@ function Get-AuditSummary {
 # ============================================================================
 
 function Main {
-    Write-Host ("`n" + ("=" * 80))
+    Write-Host "`n" + ("=" * 80)
     Write-Host "  ENTERPRISE VISIO INSTALLATION AUDIT" -ForegroundColor Cyan
-    Write-Host "  Office 365 / 2019 (x64 Only)" -ForegroundColor Cyan
-    Write-Host (("=" * 80) + "`n")
+    Write-Host "  Office 365 / 2019 / 2016 / 2013" -ForegroundColor Cyan
+    Write-Host ("=" * 80) + "`n"
 
     Initialize-AuditEnvironment
 
     # Get computers from Active Directory
-    Write-Host "[*] Targeting OU: $SearchBase" -ForegroundColor Yellow
-    Write-Host "[*] Scanning computers with prefix: $ComputerPrefix*" -ForegroundColor Yellow
-    $computers = Get-DomainComputers -Filter $ComputerFilter -SearchBase $SearchBase -ComputerPrefix $ComputerPrefix
+    $computers = Get-DomainComputers -Filter $ComputerFilter
 
     if ($computers.Count -eq 0) {
         Write-Host "[-] No computers found matching filter" -ForegroundColor Red
@@ -933,18 +712,16 @@ function Main {
     # Display summary
     $summary = Get-AuditSummary -Results $results
 
-    Write-Host ("`n" + ("=" * 80))
+    Write-Host "`n" + ("=" * 80)
     Write-Host "  AUDIT SUMMARY" -ForegroundColor Green
-    Write-Host (("=" * 80))
+    Write-Host ("=" * 80)
     Write-Host "Total Computers Scanned: $($summary.TotalComputers)" -ForegroundColor Yellow
     Write-Host "Online Computers: $($summary.OnlineComputers)" -ForegroundColor Green
     Write-Host "Offline Computers: $($summary.OfflineComputers)" -ForegroundColor Yellow
     Write-Host "Computers with Visio: $($summary.VisioInstalled)" -ForegroundColor Green
-    Write-Host "  ├─ Standard Edition:      $($summary.VisioStandard)" -ForegroundColor Cyan
-    Write-Host "  ├─ Professional Edition:  $($summary.VisioProfessional)" -ForegroundColor Cyan
-    Write-Host "  └─ Office 365:            $($summary.Office365Installs)" -ForegroundColor Cyan
+    Write-Host "Office 365 Installations: $($summary.Office365Installs)" -ForegroundColor Cyan
     Write-Host "Access Errors: $($summary.AccessErrors)" -ForegroundColor Red
-    Write-Host (("=" * 80) + "`n")
+    Write-Host ("=" * 80) + "`n"
 
     Write-Host "[+] Audit complete!" -ForegroundColor Green
     Write-Host "[+] Reports available at: $OutputPath" -ForegroundColor Green

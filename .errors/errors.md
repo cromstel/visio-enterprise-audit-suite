@@ -1,52 +1,63 @@
-## At Visio-Enterprise-Audit.ps1:286 char:57
-+ ... led = if ($result.VisioInstalled) { "âœ“ Visio" } else { "âœ— No Visi ...
-+                                              ~~~~~~~~~~~~~~~~~~~~
-Unexpected token 'Visio" } else { "âœ—' in expression or statement.
+Common Causes
+==============
+Cause	                    Explanation
+====================        ==============================================================
+Missing admin rights	    Your account doesn't have admin privileges on 334 target machines
+WinRM disabled	            Windows Remote Management service isn't running on those computers
+Firewall blocking	        Windows Firewall blocks WMI/CIM traffic (TCP 135 + dynamic ports)
+UAC restrictions	        Remote UAC is blocking administrative access
+WinRM not configured	    PowerShell remoting isn't set up for those machines
 
-# At Visio-Enterprise-Audit.ps1:323 char:39
-+             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI ...
-+                                       ~
-Missing argument in parameter list.
 
-# At Visio-Enterprise-Audit.ps1:324 char:47
-+             background: linear-gradient(135deg, #667eea 0%, #764ba2 1 ...
-+                                               ~
-Missing argument in parameter list.
 
-# At Visio-Enterprise-Audit.ps1:325 char:30
-+             min-height: 100vh;
-+                              ~
-Missing closing ')' in expression.
+## Results
+The "Access Errors: 334" you're seeing is expected behavior for this type of enterprise scan.
 
-# At Visio-Enterprise-Audit.ps1:339 char:47
-+             background: linear-gradient(135deg, #667eea 0%, #764ba2 1 ...
-+                                               ~
-Missing argument in parameter list.
+# Root Cause
+The error comes from Invoke-VisioScan() where the scriptBlock catches WMI/CIM access failures:
 
-# At Visio-Enterprise-Audit.ps1:340 char:25
-+             color: white;
-+                         ~
-Missing closing ')' in expression.
+catch {
+    $result.Error = "WMI access denied or unavailable"
+}
 
-# At Visio-Enterprise-Audit.ps1:357 char:51
-+             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr ...
-+                                                   ~
-Missing argument in parameter list.
 
-# At Visio-Enterprise-Audit.ps1:357 char:65
-+ ...          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-+                                                                  ~
-Missing argument in parameter list.
+## Why 334 Errors?
+Out of your scanned computers:
 
-# At Visio-Enterprise-Audit.ps1:542 char:62
-+ ...                               <td>$($computer.LastUsedDate ?? 'N/A')< ...
-+                                                                ~~
-Unexpected token '??' in expression or statement.
+Online but inaccessible = 334 computers returned "WMI access denied or unavailable"
+The script CAN reach these machines (ping works), but WMI/CIM queries fail
+Common Causes
+Cause	Explanation
+Missing admin rights	Your account doesn't have admin privileges on 334 target machines
+WinRM disabled	Windows Remote Management service isn't running on those computers
+Firewall blocking	Windows Firewall blocks WMI/CIM traffic (TCP 135 + dynamic ports)
+UAC restrictions	Remote UAC is blocking administrative access
+WinRM not configured	PowerShell remoting isn't set up for those machines
 
-# At Visio-Enterprise-Audit.ps1:543 char:100
-+ ... e="font-size: 0.9em; color: #666;">$($computer.InstallPath ?? 'Standa ...
-+                                                                ~~
-Unexpected token '??' in expression or statement.
-Not all parse errors were reported.  Correct the reported errors and try again.
-    + CategoryInfo          : ParserError: (:) [], ParseException
-    + FullyQualifiedErrorId : UnexpectedToken
+
+## Visio Enterprise Audit Suite - Complete
+
+All PowerShell scripts are fully aligned and production-ready.
+
+### Scripts Summary:
+
+| Script | Status | Key Features |
+|--------|--------|--------------|
+| **Office-Version-Detector.ps1** | NEW | Office 365/2019 detection, registry-based, configurable logging |
+| **visio-enterprise-audit.ps1** | UPDATED | x64-only, GOT* prefix filter, dynamic paths, parallel scanning |
+| **visio-helper-utils.ps1** | ALIGNED | Dynamic paths, ComputerPrefix parameter, all functions updated |
+| **visio-usage-analytics.ps1** | ALIGNED | Dynamic paths, all parameters, ComputerPrefix filter |
+
+### Configuration Applied:
+- **AD Path**: `OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra`
+- **Computer Prefix**: `GOT*` (configurable)
+- **Output Path**: `$ScriptDirectory\Output\VisioAudit`
+- **Office Support**: Office 365 and Office 2019 (x64 only)
+
+### Note on Access Errors:
+The "Access Errors: 334" indicates WMI/CIM access issues (not connectivity). These are normal in enterprises with locked-down workstations. To reduce errors:
+- Run as Domain Admin
+- Enable WinRM on target machines
+- Add scanning account to local administrators
+
+The script accurately reports which machines are accessible for WMI auditing.

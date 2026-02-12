@@ -17,106 +17,11 @@
 
 param(
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ComputerFilter = "*",
-
-    [Parameter(Mandatory = $false)]
-    [int]$ThreadCount = 10,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$IncludeOfflineComputers = $false,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ComputerPrefix = "GOT",
-
-    # Target specific OU within the domain
-    [Parameter(Mandatory = $false)]
-    [string]$SearchBase,
+    [string]$OutputPath = "C:\Temp\VisioAudit",
 
     [Parameter(Mandatory = $false)]
     [string[]]$ComputerNames = @()
 )
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-# Determine script directory for output operations
-if ($PSScriptRoot -or $MyInvocation.MyCommand.Path) {
-    $ScriptDirectory = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-}
-else {
-    Write-Error "Unable to determine script location. Exiting."
-    exit 1
-}
-
-# Set default OutputPath if not provided
-if ([string]::IsNullOrEmpty($OutputPath)) {
-    $OutputPath = "$ScriptDirectory\Output\VisioAudit"
-}
-
-# Set default SearchBase if not provided
-if ([string]::IsNullOrEmpty($SearchBase)) {
-    $SearchBase = "OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra"
-}
-
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
-
-function Initialize-AuditEnvironment {
-    try {
-        if (!(Test-Path $OutputPath)) {
-            New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
-        }
-        Write-Host "Output directory: $OutputPath" -ForegroundColor Green
-    }
-    catch {
-        Write-Error "Failed to create output directory '$OutputPath': $_.Exception.Message"
-        Write-Error "Please check permissions and path validity."
-        exit 1
-    }
-}
-
-function Get-DomainComputers {
-    param(
-        [string]$Filter = "*",
-        [string]$SearchBase,
-        [string]$ComputerPrefix = "GOT"
-    )
-
-    Write-Host "`n[*] Querying Active Directory for computers..." -ForegroundColor Cyan
-    Write-Host "[*] Targeting OU: $SearchBase" -ForegroundColor Yellow
-    Write-Host "[*] Using computer prefix filter: $ComputerPrefix*" -ForegroundColor Yellow
-    
-    try {
-        # Build filter using ComputerPrefix
-        $prefixFilter = "$ComputerPrefix*"
-        $getADParams = @{
-            Filter      = "Name -like '$prefixFilter'"
-            Properties  = @("Name", "OperatingSystem", "LastLogonDate")
-            ErrorAction = "Stop"
-            SearchBase  = $SearchBase
-        }
-        
-        if ($Domain) {
-            $getADParams.Server = $Domain
-        }
-        
-        $computers = Get-ADComputer @getADParams |
-            Where-Object { $_.OperatingSystem -like "*Windows*" } |
-            Sort-Object -Property Name
-
-        Write-Host "[+] Found $($computers.Count) computers in Active Directory" -ForegroundColor Green
-        return $computers
-    }
-    catch {
-        Write-Host "[-] Error querying Active Directory: $_" -ForegroundColor Red
-        exit 1
-    }
-}
 
 # ============================================================================
 # DETAILED VISIO USAGE ANALYSIS
@@ -499,61 +404,35 @@ function New-UsageAnalyticsReport {
 # MAIN EXECUTION
 # ============================================================================
 
-function Main {
-    Write-Host ("`n" + ("=" * 80))
-    Write-Host "  VISIO USAGE ANALYTICS" -ForegroundColor Cyan
-    Write-Host "  Detailed usage tracking and activity monitoring" -ForegroundColor Cyan
-    Write-Host (("=" * 80) + "`n")
+Write-Host "`n[*] Starting detailed Visio usage analysis..." -ForegroundColor Cyan
 
-    Initialize-AuditEnvironment
-
-    # Get computers from Active Directory
-    Write-Host "[*] Targeting OU: $SearchBase" -ForegroundColor Yellow
-    Write-Host "[*] Scanning computers with prefix: $ComputerPrefix*" -ForegroundColor Yellow
-    
-    if ($ComputerNames.Count -eq 0) {
-        $computers = Get-DomainComputers -Filter $ComputerFilter -SearchBase $SearchBase -ComputerPrefix $ComputerPrefix
-        $ComputerNames = $computers.Name
-    }
-
-    if ($ComputerNames.Count -eq 0) {
-        Write-Host "[-] No computers found matching filter" -ForegroundColor Red
-        exit 1
-    }
-
-    $results = @()
-
-    foreach ($computer in $ComputerNames) {
-        Write-Host "[*] Analyzing $computer..." -ForegroundColor Yellow
-        
-        $usage = Get-DetailedVisioUsage -ComputerName $computer
-        $documents = Measure-VisioDocuments -ComputerName $computer
-        $license = Get-Office365LicenseStatus -ComputerName $computer
-        $config = Get-VisioConfiguration -ComputerName $computer
-
-        $results += @{
-            Usage         = $usage
-            Documents     = $documents
-            License       = $license
-            Configuration = $config
-        }
-    }
-
-    # Generate report
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    $reportPath = Join-Path $OutputPath "VisioUsageAnalytics_$timestamp.html"
-
-    New-UsageAnalyticsReport -UsageData $results.Usage -OutputPath $reportPath
-
-    Write-Host ("`n" + ("=" * 80))
-    Write-Host "  USAGE ANALYTICS SUMMARY" -ForegroundColor Green
-    Write-Host (("=" * 80))
-    Write-Host "Computers Analyzed: $($ComputerNames.Count)" -ForegroundColor Yellow
-    Write-Host "Report saved: $reportPath" -ForegroundColor Green
-    Write-Host (("=" * 80) + "`n")
-
-    Write-Host "[+] Analysis complete!" -ForegroundColor Green
-    Write-Host "[+] Report saved: $reportPath" -ForegroundColor Yellow
+if ($ComputerNames.Count -eq 0) {
+    $ComputerNames = (Get-ADComputer -Filter "Name -like '*'" -Properties Name).Name | Select-Object -First 20
 }
 
-Main
+$results = @()
+
+foreach ($computer in $ComputerNames) {
+    Write-Host "[*] Analyzing $computer..." -ForegroundColor Yellow
+    
+    $usage = Get-DetailedVisioUsage -ComputerName $computer
+    $documents = Measure-VisioDocuments -ComputerName $computer
+    $license = Get-Office365LicenseStatus -ComputerName $computer
+    $config = Get-VisioConfiguration -ComputerName $computer
+
+    $results += @{
+        Usage         = $usage
+        Documents     = $documents
+        License       = $license
+        Configuration = $config
+    }
+}
+
+# Generate report
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$reportPath = Join-Path $OutputPath "VisioUsageAnalytics_$timestamp.html"
+
+New-UsageAnalyticsReport -UsageData $results.Usage -OutputPath $reportPath
+
+Write-Host "[+] Analysis complete!" -ForegroundColor Green
+Write-Host "[+] Report saved: $reportPath" -ForegroundColor Yellow

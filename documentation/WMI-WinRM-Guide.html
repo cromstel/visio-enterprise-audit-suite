@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMI/CIM and WinRM Configuration Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+            font-size: 1.5em;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 0.9em;
+        }
+
+        .code-block .comment {
+            color: #6a9955;
+        }
+
+        .code-block .cmd {
+            color: #dcdcaa;
+        }
+
+        .step {
+            background: #f0f4ff;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .step h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .recommendation {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            border: 1px solid #28a745;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 25px 0;
+        }
+
+        .recommendation h3 {
+            color: #155724;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .recommendation ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .recommendation li {
+            padding: 8px 0;
+            color: #155724;
+        }
+
+        .recommendation li::before {
+            content: "✓";
+            color: #28a745;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .footer {
+            background: #f8f9fa;
+            padding: 20px 40px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WMI/CIM and WinRM Configuration Guide</h1>
+            <p>Enterprise Visio Audit - Remote Management Configuration</p>
+        </div>
+        
+        <div class="content">
+            <div class="section">
+                <h2>Understanding WMI/CIM</h2>
+                
+                <div class="info-box">
+                    <h3>What is WMI/CIM?</h3>
+                    <p><strong>WMI (Windows Management Instrumentation)</strong> and <strong>CIM (Common Information Model)</strong> are Windows management APIs that allow remote access to system information and control.</p>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Term</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>WMI</strong></td>
+                            <td>Microsoft's legacy implementation of CIM standards</td>
+                        </tr>
+                        <tr>
+                            <td><strong>CIM</strong></td>
+                            <td>Modern, industry-standard approach (PowerShell uses this)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>CimSession</strong></td>
+                            <td>PowerShell's modern remote connection via WS-Man protocol</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p>Your script uses <code>New-CimSession</code> which communicates via <strong>WinRM</strong>.</p>
+            </div>
+
+            <div class="section">
+                <h2>Understanding WinRM</h2>
+                
+                <div class="info-box">
+                    <h3>What is WinRM?</h3>
+                    <p><strong>WinRM (Windows Remote Management)</strong> is Microsoft's WS-Management protocol implementation for remote hardware management.</p>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Property</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>HTTP Port</strong></td>
+                            <td>TCP 5985</td>
+                        </tr>
+                        <tr>
+                            <td><strong>HTTPS Port</strong></td>
+                            <td>TCP 5986</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Purpose</strong></td>
+                            <td>Remote PowerShell, WMI/CIM queries, system management</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Default State</strong></td>
+                            <td>Disabled on most Windows installations</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="section">
+                <h2>Understanding "Access Errors: 334"</h2>
+                
+                <div class="info-box" style="border-left-color: #dc3545;">
+                    <h3 style="color: #dc3545;">What This Error Means</h3>
+                    <p>The error <span class="highlight">"Access Errors: 334"</span> indicates that your script successfully reached 334 computers (ping worked), but <strong>WMI/CIM queries failed</strong> due to permission or configuration issues.</p>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Error Type</th>
+                            <th>Explanation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Online but Inaccessible</strong></td>
+                            <td>334 computers returned "WMI access denied or unavailable"</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Root Cause</strong></td>
+                            <td>Your account lacks admin privileges or WinRM is disabled on target machines</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="step">
+                    <h4>Common Causes</h4>
+                    <table style="margin-top: 10px;">
+                        <tbody>
+                            <tr>
+                                <td><strong>Missing admin rights</strong></td>
+                                <td>Your account doesn't have admin privileges on 334 target machines</td>
+                            </tr>
+                            <tr>
+                                <td><strong>WinRM disabled</strong></td>
+                                <td>Windows Remote Management service isn't running on those computers</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Firewall blocking</strong></td>
+                                <td>Windows Firewall blocks WMI/CIM traffic (TCP 135 + dynamic ports)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>UAC restrictions</strong></td>
+                                <td>Remote UAC is blocking administrative access</td>
+                            </tr>
+                            <tr>
+                                <td><strong>WinRM not configured</strong></td>
+                                <td>PowerShell remoting isn't set up for those machines</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="info-box">
+                    <h3>Is This Normal?</h3>
+                    <p><strong>Yes!</strong> Access errors between 20-50%% are normal in large enterprises where:</p>
+                    <ul style="margin-top: 10px;">
+                        <li>Laptops are off-site/VPN-only</li>
+                        <li>Workstations are locked down for security</li>
+                        <li>Security policies restrict WMI access</li>
+                    </ul>
+                    <p style="margin-top: 15px;">The script is working correctly - it's accurately reporting which machines are accessible for WMI auditing.</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Best Solution: Group Policy (Recommended)</h2>
+                
+                <div class="recommendation">
+                    <h3>✓ Why Group Policy is Best</h3>
+                    <ul>
+                        <li>Scalable for enterprise deployments</li>
+                        <li>Secure - no over-privileged accounts needed</li>
+                        <li>Auditable and reversible</li>
+                        <li>Industry best practice for Windows management</li>
+                        <li>Automatic deployment to all GOT* computers</li>
+                    </ul>
+                </div>
+
+                <div class="step">
+                    <h4>Step 1: Configure WinRM Service GPO</h4>
+                    <p><strong>Path:</strong> Computer Configuration → Administrative Templates → Windows Components → Windows Remote Management (WinRM)</p>
+                    
+                    <div class="code-block">
+<span class="comment"># WinRM Service Settings:</span>
+<span class="comment"># 1. Allow remote server management through WinRM: Enabled</span>
+<span class="comment"># 2. Trusted Hosts: Add your management server IP or configure Kerberos</span>
+<span class="comment"># 3. Allow Basic authentication: Disabled (use Kerberos)</span>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h4>Step 2: Configure Windows Firewall Rules</h4>
+                    <p><strong>Path:</strong> Computer Configuration → Windows Settings → Security Settings → Windows Firewall</p>
+                    
+                    <div class="code-block">
+<span class="comment"># Inbound Rules to Create:</span>
+<span class="cmd">TCP 5985</span> - Windows Remote Management (HTTP) - Allow
+<span class="cmd">TCP 5986</span> - Windows Remote Management (HTTPS) - Allow
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h4>Step 3: Link GPO to Target OU</h4>
+                    <p><strong>Target OU:</strong></p>
+                    <div class="code-block">
+OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h4>Step 4: Force GPO Update</h4>
+                    <div class="code-block">
+<span class="comment"># PowerShell command to force GPO update on all GOT* computers:</span>
+Invoke-GPUpdate -Computer "GOT*" -Force -RandomDelayInMinutes 0
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h4>Step 5: Test WinRM Connectivity</h4>
+                    <div class="code-block">
+<span class="comment"># On a GOT* machine, verify WinRM is running:</span>
+winrm quickconfig
+
+<span class="comment"># From management server, test connectivity:</span>
+Test-WSMan -ComputerName GOT001
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Alternative Quick Fixes</h2>
+
+                <div class="step">
+                    <h4>Option A: Run as Domain Admin</h4>
+                    <p>Launch PowerShell as a Domain Admin account before running the audit script.</p>
+                    <p><em>Pros:</em> No configuration needed</p>
+                    <p><em>Cons:</em> Security risk, may still fail on locked-down machines</p>
+                </div>
+
+                <div class="step">
+                    <h4>Option B: Add Account to Local Administrators</h4>
+                    <div class="code-block">
+<span class="comment"># PowerShell one-liner to add scan account to all GOT* machines:</span>
+
+$GOTComputers = Get-ADComputer -Filter {Name -like "GOT*"} -SearchBase "OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra"
+
+foreach ($comp in $GOTComputers) {
+    Invoke-Command -ComputerName $comp.Name -ScriptBlock {
+        net localgroup Administrators /add "EURO\YourScanAccount"
+    }
+}
+                    </div>
+                    <p><em>Pros:</em> Persistent permissions</p>
+                    <p><em>Cons:</em> Security risk, manual cleanup needed</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Summary</h2>
+                
+                <div class="info-box">
+                    <h3>Recommendation</h3>
+                    <p>Use <strong>Group Policy (Option 1)</strong> as it provides:</p>
+                    <ul style="margin-top: 10px;">
+                        <li>Enterprise scalability</li>
+                        <li>Enhanced security (no over-privileged accounts)</li>
+                        <li>Full audit trail</li>
+                        <li>Easy reversal if needed</li>
+                        <li>Industry-standard best practice</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Enterprise Visio Installation Audit System</p>
+            <p>Documentation generated for Visio Enterprise Audit Suite</p>
+        </div>
+    </div>
+</body>

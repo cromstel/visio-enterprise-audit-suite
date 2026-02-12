@@ -5,8 +5,11 @@
 # =============================================================================
 
 .githhub/       # GitHub Actions workflow files (if using GitHub Actions)
-.vscode/         # Visual Studio Code settings and workspace files
-error.log        # Log files that may contain sensitive information
-error.txt        # Text files that may contain sensitive information
-errors.md         # Markdown files that may contain sensitive information
+.vscode/        # Visual Studio Code settings and workspace files
+error.log       # Log files that may contain sensitive information
+error.txt       # Text files that may contain sensitive information
+errors.md       # Markdown files that may contain sensitive information
 .errors/        # Error files
+.backups/       # Backup files that may contain sensitive information
+*.bak           # Backup files that may contain sensitive information
+*.backup        # Backup files that may contain sensitive information

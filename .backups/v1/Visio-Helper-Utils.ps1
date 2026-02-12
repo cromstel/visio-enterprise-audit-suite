@@ -1,11 +1,9 @@
 ﻿#requires -RunAsAdministrator
-#requires -Modules ActiveDirectory
 
 <#
 .SYNOPSIS
     Visio Audit Helper Utilities
     Common tasks and shortcuts for managing Visio audit data
-    Supports: Visio 2021 Standard/Professional, Visio 2019, Office 365 (x64/x86)
 
 .DESCRIPTION
     Provides quick access to:
@@ -22,8 +20,7 @@
 
 function Show-Menu {
     Write-Host "`n╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║  VISIO ENTERPRISE AUDIT - HELPER UTILITIES               ║" -ForegroundColor Cyan
-    Write-Host "║  Supports: Visio 2021 (Std/Pro), Visio 2019, Office 365   ║" -ForegroundColor Cyan
+    Write-Host "║       VISIO ENTERPRISE AUDIT - HELPER UTILITIES                ║" -ForegroundColor Cyan
     Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "1.  Run Full Installation Audit" -ForegroundColor Yellow
@@ -43,21 +40,17 @@ function Show-Menu {
 
 function Invoke-FullAudit {
     param(
-        [string]$OutputPath,
-        [string]$ComputerPrefix = "GOT",
+        [string]$OutputPath = "C:\Temp\VisioAudit",
+        [string]$Filter = "*",
         [int]$Threads = 10
     )
-    
-    Write-Host "`n[*] Starting full Visio audit..." -ForegroundColor Cyan
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    
-    if ([string]::IsNullOrEmpty($OutputPath)) {
-        $OutputPath = "$scriptPath\Output\VisioAudit"
-    }
 
-    & "$scriptPath\visio-enterprise-audit.ps1" `
+    Write-Host "`n[*] Starting full Visio audit..." -ForegroundColor Cyan
+    $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+    & "$scriptPath\Visio-Enterprise-Audit.ps1" `
         -OutputPath $OutputPath `
-        -ComputerPrefix $ComputerPrefix `
+        -ComputerFilter $Filter `
         -ThreadCount $Threads
 
     Write-Host "[+] Audit complete! Check $OutputPath for reports." -ForegroundColor Green
@@ -65,16 +58,9 @@ function Invoke-FullAudit {
 
 function Find-UnusedVisio {
     param(
-        [string]$ReportPath,
+        [string]$ReportPath = "C:\Temp\VisioAudit",
         [int]$MonthsInactive = 6
     )
-    
-    # Use dynamic script path
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    
-    if ([string]::IsNullOrEmpty($ReportPath)) {
-        $ReportPath = "$scriptPath\Output\VisioAudit"
-    }
 
     Write-Host "`n[*] Finding Visio installations unused for $MonthsInactive+ months..." -ForegroundColor Cyan
 
@@ -98,7 +84,7 @@ function Find-UnusedVisio {
     Write-Host "`n[+] Found $($unused.Count) unused Visio installations:" -ForegroundColor Green
     Write-Host ""
 
-    $unused | Format-Table -Property ComputerName, VisioVersion, VisioEdition, LastUsedDate -AutoSize | Out-Host
+    $unused | Format-Table -Property ComputerName, VisioVersion, LastUsedDate -AutoSize | Out-Host
 
     # Export to CSV
     $outputFile = Join-Path (Split-Path $latestReport.FullName) "UnusedVisio_$($MonthsInactive)Months_$(Get-Date -Format 'yyyyMMdd').csv"
@@ -110,15 +96,8 @@ function Find-UnusedVisio {
 
 function Export-ToExcel {
     param(
-        [string]$ReportPath
+        [string]$ReportPath = "C:\Temp\VisioAudit"
     )
-    
-    # Use dynamic script path
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    
-    if ([string]::IsNullOrEmpty($ReportPath)) {
-        $ReportPath = "$scriptPath\Output\VisioAudit"
-    }
 
     Write-Host "`n[*] Exporting to Excel..." -ForegroundColor Cyan
 
@@ -152,15 +131,8 @@ function Export-ToExcel {
 
 function Show-ReportSummary {
     param(
-        [string]$ReportPath
+        [string]$ReportPath = "C:\Temp\VisioAudit"
     )
-    
-    # Use dynamic script path
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    
-    if ([string]::IsNullOrEmpty($ReportPath)) {
-        $ReportPath = "$scriptPath\Output\VisioAudit"
-    }
 
     $latestReport = Get-ChildItem -Path $ReportPath -Filter "VisioAudit_*.csv" | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
 
@@ -184,9 +156,6 @@ function Show-ReportSummary {
         Errors         = ($data | Where-Object { $_.Error -ne "None" -and ![string]::IsNullOrEmpty($_.Error) }).Count
     }
 
-    $visioStandard = ($data | Where-Object { $_.VisioEdition -eq "Standard" }).Count
-    $visioProfessional = ($data | Where-Object { $_.VisioEdition -eq "Professional" }).Count
-
     Write-Host "`nReport File: $($latestReport.Name)" -ForegroundColor Yellow
     Write-Host "Generated: $($latestReport.LastWriteTime)" -ForegroundColor Yellow
     Write-Host ""
@@ -195,8 +164,6 @@ function Show-ReportSummary {
     Write-Host "  └─ Offline:               $($summary.Offline)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Visio Installations:        $($summary.WithVisio)" -ForegroundColor Green
-    Write-Host "  ├─ Standard Edition:      $visioStandard" -ForegroundColor Cyan
-    Write-Host "  ├─ Professional Edition:  $visioProfessional" -ForegroundColor Cyan
     Write-Host "  └─ Office 365:            $($summary.Office365)" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Installation Rate:          $(($summary.WithVisio / $summary.Total * 100).ToString("F1"))%" -ForegroundColor Green
@@ -209,9 +176,7 @@ function Show-ReportSummary {
 }
 
 function Compare-Reports {
-    # Use dynamic script path
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    $reportPath = "$scriptPath\Output\VisioAudit"
+    $reportPath = "C:\Temp\VisioAudit"
 
     Write-Host "`n[*] Comparing reports to find changes..." -ForegroundColor Cyan
 
@@ -249,28 +214,21 @@ function Compare-Reports {
 
     Write-Host "`nNew Installations: $($newInstalls.Count)" -ForegroundColor Green
     if ($newInstalls.Count -gt 0) {
-        $newInstalls | Format-Table -Property ComputerName, VisioVersion, VisioEdition, Office365
+        $newInstalls | Format-Table -Property ComputerName, VisioVersion, Office365
     }
 
     Write-Host "`nRemoved Installations: $($removed.Count)" -ForegroundColor Yellow
     if ($removed.Count -gt 0) {
-        $removed | Format-Table -Property ComputerName, VisioVersion, VisioEdition
+        $removed | Format-Table -Property ComputerName
     }
 }
 
 function New-CostAnalysis {
     param(
-        [string]$ReportPath,
+        [string]$ReportPath = "C:\Temp\VisioAudit",
         [double]$Office365CostPerMonth = 60,
         [double]$DesktopCostPerUser = 300
     )
-    
-    # Use dynamic script path
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    
-    if ([string]::IsNullOrEmpty($ReportPath)) {
-        $ReportPath = "$scriptPath\Output\VisioAudit"
-    }
 
     $latestReport = Get-ChildItem -Path $ReportPath -Filter "VisioAudit_*.csv" | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
 
@@ -281,14 +239,11 @@ function New-CostAnalysis {
 
     $data = Import-Csv $latestReport.FullName
 
-    $visioStandard = ($data | Where-Object { $_.VisioEdition -eq "Standard" -and $_.IsOnline -eq "Yes" }).Count
-    $visioProfessional = ($data | Where-Object { $_.VisioEdition -eq "Professional" -and $_.IsOnline -eq "Yes" }).Count
     $office365Count = ($data | Where-Object { $_.Office365 -eq "Yes" -and $_.IsOnline -eq "Yes" }).Count
-    $desktopStandard = ($data | Where-Object { $_.VisioInstalled -eq "Yes" -and $_.Office365 -ne "Yes" -and $_.VisioEdition -eq "Standard" -and $_.IsOnline -eq "Yes" }).Count
-    $desktopProfessional = ($data | Where-Object { $_.VisioInstalled -eq "Yes" -and $_.Office365 -ne "Yes" -and $_.VisioEdition -eq "Professional" -and $_.IsOnline -eq "Yes" }).Count
+    $desktopCount = ($data | Where-Object { $_.VisioInstalled -eq "Yes" -and $_.Office365 -ne "Yes" -and $_.IsOnline -eq "Yes" }).Count
 
     $office365Annual = $office365Count * $Office365CostPerMonth * 12
-    $desktopAnnual = ($desktopStandard + $desktopProfessional) * $DesktopCostPerUser
+    $desktopAnnual = $desktopCount * $DesktopCostPerUser
     $totalAnnual = $office365Annual + $desktopAnnual
 
     Write-Host "`n╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
@@ -296,13 +251,9 @@ function New-CostAnalysis {
     Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 
     Write-Host "`nLicense Summary:" -ForegroundColor Green
-    Write-Host "  Total Standard Edition:     $visioStandard" -ForegroundColor Cyan
-    Write-Host "  Total Professional Edition: $visioProfessional" -ForegroundColor Cyan
-    Write-Host "  ────────────────────────────────────" -ForegroundColor Green
-    Write-Host "  Office 365 Subscriptions:   $office365Count" -ForegroundColor Cyan
-    Write-Host "  Desktop Standard Licenses:  $desktopStandard" -ForegroundColor Cyan
-    Write-Host "  Desktop Professional:       $desktopProfessional" -ForegroundColor Cyan
-    Write-Host "  Total Active Installations: $($office365Count + $desktopStandard + $desktopProfessional)" -ForegroundColor Green
+    Write-Host "  Office 365 Subscriptions:    $office365Count" -ForegroundColor Cyan
+    Write-Host "  Desktop Licenses:            $desktopCount" -ForegroundColor Cyan
+    Write-Host "  Total Active Installations:  $($office365Count + $desktopCount)" -ForegroundColor Green
 
     Write-Host "`nCost Breakdown (Annual):" -ForegroundColor Green
     Write-Host "  Office 365 Cost:             `$$([Math]::Round($office365Annual, 2))" -ForegroundColor Green
@@ -310,22 +261,15 @@ function New-CostAnalysis {
     Write-Host "  ────────────────────────────────────" -ForegroundColor Green
     Write-Host "  TOTAL ANNUAL COST:           `$$([Math]::Round($totalAnnual, 2))" -ForegroundColor Yellow
 
-    Write-Host "`nMonthly Cost:                 `$$([Math]::Round($totalAnnual / 12, 2))" -ForegroundColor Yellow
+    Write-Host "`nMonthly Cost:                `$$([Math]::Round($totalAnnual / 12, 2))" -ForegroundColor Yellow
 }
 
 function Send-EmailReport {
     param(
-        [string]$ReportPath,
+        [string]$ReportPath = "C:\Temp\VisioAudit",
         [string]$Recipients = "it-admin@company.com",
         [string]$SmtpServer = "smtp.company.com"
     )
-    
-    # Use dynamic script path
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    
-    if ([string]::IsNullOrEmpty($ReportPath)) {
-        $ReportPath = "$scriptPath\Output\VisioAudit"
-    }
 
     Write-Host "`n[*] Preparing email report..." -ForegroundColor Cyan
 
@@ -370,7 +314,7 @@ function New-ScheduledAudit {
 
     Write-Host "`n[*] Creating scheduled task for $Frequency Visio audit..." -ForegroundColor Cyan
 
-    $scriptPath = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "visio-enterprise-audit.ps1"
+    $scriptPath = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "Visio-Enterprise-Audit.ps1"
 
     if (!(Test-Path $scriptPath)) {
         Write-Host "[-] Script not found at $scriptPath" -ForegroundColor Red
@@ -411,15 +355,8 @@ function New-ScheduledAudit {
 function Select-ReportByDepartment {
     param(
         [string]$Department,
-        [string]$ReportPath
+        [string]$ReportPath = "C:\Temp\VisioAudit"
     )
-    
-    # Use dynamic script path
-    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    
-    if ([string]::IsNullOrEmpty($ReportPath)) {
-        $ReportPath = "$scriptPath\Output\VisioAudit"
-    }
 
     Write-Host "`n[*] Filtering report for department: $Department" -ForegroundColor Cyan
 
@@ -434,7 +371,7 @@ function Select-ReportByDepartment {
     $filtered = $data | Where-Object { $_.ComputerName -like "*$Department*" }
 
     Write-Host "`n[+] Found $($filtered.Count) computers in '$Department'" -ForegroundColor Green
-    $filtered | Format-Table -Property ComputerName, VisioInstalled, VisioVersion, VisioEdition, LastUsedDate
+    $filtered | Format-Table -Property ComputerName, VisioInstalled, VisioVersion, LastUsedDate
 
     $outputFile = Join-Path (Split-Path $latestReport.FullName) "VisioAudit_${Department}_$(Get-Date -Format 'yyyyMMdd').csv"
     $filtered | Export-Csv -Path $outputFile -NoTypeInformation
@@ -452,13 +389,13 @@ function Start-InteractiveMenu {
 
         switch ($choice) {
             "1" {
-                $prefix = Read-Host "Enter computer prefix (default: GOT)"
-                if ([string]::IsNullOrEmpty($prefix)) { $prefix = "GOT" }
-                Invoke-FullAudit -ComputerPrefix $prefix
+                $filter = Read-Host "Enter computer filter (default: *)"
+                if ([string]::IsNullOrEmpty($filter)) { $filter = "*" }
+                Invoke-FullAudit -Filter $filter
             }
             "2" {
                 Write-Host "`nStarting usage analytics..." -ForegroundColor Cyan
-                & "$PSScriptRoot\visio-Usage-analytics.ps1"
+                & "$PSScriptRoot\Visio-Usage-Analytics.ps1"
             }
             "3" {
                 $months = Read-Host "Months inactive (default: 6)"
@@ -503,9 +440,7 @@ function Start-InteractiveMenu {
             "11" {
                 Write-Host "`nDepartment summary feature - enter wildcard (e.g., 'SALES*')" -ForegroundColor Cyan
                 $pattern = Read-Host "Enter pattern"
-                # Use dynamic script path
-                $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-                $reportPath = "$scriptPath\Output\VisioAudit"
+                $reportPath = "C:\Temp\VisioAudit"
                 $latestReport = Get-ChildItem -Path $reportPath -Filter "VisioAudit_*.csv" | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
 
                 if ($latestReport) {
@@ -514,13 +449,9 @@ function Start-InteractiveMenu {
 
                     foreach ($group in $grouped) {
                         $withVisio = $group.Group | Where-Object { $_.VisioInstalled -eq "Yes" }
-                        $standardEdition = $withVisio | Where-Object { $_.VisioEdition -eq "Standard" }
-                        $professionalEdition = $withVisio | Where-Object { $_.VisioEdition -eq "Professional" }
                         Write-Host "`n$($group.Name):" -ForegroundColor Cyan
                         Write-Host "  Total: $($group.Group.Count)" -ForegroundColor Yellow
                         Write-Host "  With Visio: $($withVisio.Count)" -ForegroundColor Green
-                        Write-Host "    ├─ Standard: $($standardEdition.Count)" -ForegroundColor Cyan
-                        Write-Host "    └─ Professional: $($professionalEdition.Count)" -ForegroundColor Cyan
                     }
                 }
                 Pause
