@@ -8,7 +8,7 @@
 
 .DESCRIPTION
     This script queries Active Directory for all computers, then uses WMI/Registry
-    to check for Visio installations. Supports Office 365 and Office 2019 only.
+    to check for Visio installations. Supports Visio 2021, 2019, and Office 365.
     Generates CSV and HTML reports.
 
 .PARAMETER OutputPath
@@ -35,6 +35,7 @@ param(
     [string]$ComputerFilter = "*",
 
     [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 64)]
     [int]$ThreadCount = 10,
 
     [Parameter(Mandatory = $false)]
@@ -66,12 +67,9 @@ if ([string]::IsNullOrEmpty($OutputPath)) {
     $OutputPath = "$ScriptDirectory\Output\VisioAudit"
 }
 
-$ErrorActionPreference = "SilentlyContinue"
-$WarningPreference = "SilentlyContinue"
-
-# Set default SearchBase if not provided
+# Set default SearchBase if not provided (defaults to entire domain if not specified)
 if ([string]::IsNullOrEmpty($SearchBase)) {
-    $SearchBase = "OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra"
+    $SearchBase = $null
 }
 
 # Visio installation paths for all supported versions
@@ -105,14 +103,44 @@ function Initialize-AuditEnvironment {
         if (!(Test-Path $OutputPath)) {
             New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
         }
-        Write-Host "Output directory: $OutputPath" -ForegroundColor Green
+        Write-UiSuccess "Output directory: $OutputPath"
     }
     catch {
-        Write-Error "Failed to create output directory '$OutputPath': $_.Exception.Message"
+        Write-Error "Failed to create output directory '$OutputPath': $($_.Exception.Message)"
         Write-Error "Please check permissions and path validity."
         exit 1
     }
 }
+
+function Write-UiLine {
+    param(
+        [string]$Message,
+        [string]$Color = "Gray"
+    )
+
+    Write-Host $Message -ForegroundColor $Color
+}
+
+function Write-UiHeader {
+    param(
+        [string]$Title,
+        [string]$Subtitle = ""
+    )
+
+    $rule = "=" * 80
+    Write-UiLine ""
+    Write-UiLine $rule "DarkCyan"
+    Write-UiLine (" {0}" -f $Title) "Cyan"
+    if ($Subtitle) {
+        Write-UiLine (" {0}" -f $Subtitle) "Cyan"
+    }
+    Write-UiLine $rule "DarkCyan"
+}
+
+function Write-UiInfo { param([string]$Message) Write-UiLine ("[INFO] {0}" -f $Message) "Yellow" }
+function Write-UiSuccess { param([string]$Message) Write-UiLine ("[ OK ] {0}" -f $Message) "Green" }
+function Write-UiWarn { param([string]$Message) Write-UiLine ("[WARN] {0}" -f $Message) "DarkYellow" }
+function Write-UiError { param([string]$Message) Write-UiLine ("[ERR ] {0}" -f $Message) "Red" }
 
 function Get-DomainComputers {
     param(
@@ -121,9 +149,14 @@ function Get-DomainComputers {
         [string]$ComputerPrefix = "GOT"
     )
 
-    Write-Host "`n[*] Querying Active Directory for computers..." -ForegroundColor Cyan
-    Write-Host "[*] Targeting OU: $SearchBase" -ForegroundColor Yellow
-    Write-Host "[*] Using computer prefix filter: $ComputerPrefix*" -ForegroundColor Yellow
+    Write-UiInfo "Querying Active Directory for computers..."
+    if ($SearchBase) {
+        Write-UiInfo "Targeting OU: $SearchBase"
+    }
+    else {
+        Write-UiInfo "Searching entire domain"
+    }
+    Write-UiInfo "Using computer prefix filter: $ComputerPrefix*"
     
     try {
         # Build filter using ComputerPrefix
@@ -132,22 +165,21 @@ function Get-DomainComputers {
             Filter      = "Name -like '$prefixFilter'"
             Properties  = @("Name", "OperatingSystem", "LastLogonDate")
             ErrorAction = "Stop"
-            SearchBase  = $SearchBase
         }
         
-        if ($Domain) {
-            $getADParams.Server = $Domain
+        if ($SearchBase) {
+            $getADParams.SearchBase = $SearchBase
         }
         
         $computers = Get-ADComputer @getADParams |
             Where-Object { $_.OperatingSystem -like "*Windows*" } |
             Sort-Object -Property Name
 
-        Write-Host "[+] Found $($computers.Count) computers in Active Directory" -ForegroundColor Green
+        Write-UiSuccess "Found $($computers.Count) computers in Active Directory"
         return $computers
     }
     catch {
-        Write-Host "[-] Error querying Active Directory: $_" -ForegroundColor Red
+        Write-UiError "Error querying Active Directory: $($_.Exception.Message)"
         exit 1
     }
 }
@@ -172,11 +204,13 @@ function Get-VisioInstallationInfo {
         ComputerName      = $ComputerName
         IsOnline          = $false
         VisioInstalled    = $false
+        CurrentUser       = $null
         VisioVersion      = $null
         VisioEdition      = $null  # Standard, Professional, or null
         InstallPath       = $null
         LastAccessTime    = $null
         LastUsedDate      = $null
+        LastUsageSource   = $null
         Office365Install  = $false
         OfficeVersion     = $null
         Error             = $null
@@ -195,7 +229,18 @@ function Get-VisioInstallationInfo {
         $session = $null
         $session = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
 
+        # Detect interactive logged-on user.
+        $computerSystem = Get-CimInstance -CimSession $session -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+        if ($computerSystem -and $computerSystem.UserName) {
+            $result.CurrentUser = $computerSystem.UserName
+        }
+
         # Query installed Office products
+        # NOTE: Win32_Product is used here, which has known issues:
+        # 1. It triggers a Windows Installer repair process, which can cause issues
+        # 2. It's slow and inefficient
+        # 3. It may cause unexpected behavior with MSI-based installations
+        # For better results, consider using registry-based detection methods instead
         $officeProducts = Get-CimInstance -CimSession $session `
             -ClassName Win32_Product `
             -Filter "Name LIKE '%Office%' OR Name LIKE '%Visio%'" `
@@ -239,6 +284,13 @@ function Get-VisioInstallationInfo {
             }
         }
 
+        # Last-use source 1: live process means Visio is in use now.
+        $visioRunning = Get-CimInstance -CimSession $session -ClassName Win32_Process -Filter "Name='VISIO.EXE'" -ErrorAction SilentlyContinue
+        if ($visioRunning) {
+            $result.LastUsedDate = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            $result.LastUsageSource = "RunningProcess"
+        }
+
         # Check file system for Visio executable
         foreach ($path in $Paths) {
             $remoteFile = "\\$ComputerName\$($path -replace ':', '$')"
@@ -249,9 +301,25 @@ function Get-VisioInstallationInfo {
                     $result.VisioInstalled = $true
                     $result.InstallPath = $path
                     $result.LastAccessTime = $fileInfo.LastAccessTime
-                    $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    if (-not $result.LastUsedDate) {
+                        $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
+                        $result.LastUsageSource = "ExecutableLastAccess"
+                    }
                     break
                 }
+            }
+        }
+
+        # Last-use source 2: prefetch metadata is a better historical signal than EXE access time.
+        if (($result.VisioInstalled -or $visioRunning) -and (-not $result.LastUsageSource -or $result.LastUsageSource -eq "ExecutableLastAccess")) {
+            $prefetchPath = "\\$ComputerName\C$\Windows\Prefetch"
+            $lastPrefetch = Get-ChildItem -Path $prefetchPath -Filter "VISIO*.pf" -ErrorAction SilentlyContinue |
+                Sort-Object -Property LastWriteTime -Descending |
+                Select-Object -First 1
+
+            if ($lastPrefetch) {
+                $result.LastUsedDate = $lastPrefetch.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                $result.LastUsageSource = "Prefetch"
             }
         }
 
@@ -286,57 +354,21 @@ function Get-VisioInstallationInfo {
     return $result
 }
 
-function Get-VisioLastUsedFromRegistry {
-    param(
-        [string]$ComputerName
-    )
-
-    try {
-        $regKey = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey(
-            [Microsoft.Win32.RegistryHive]::CurrentUser,
-            $ComputerName
-        )
-
-        # Office 365/2019 recent document registry path
-        $path = "Software\Microsoft\Office\16.0\Common\Open Find"
-        $key = $regKey.OpenSubKey($path)
-
-        if ($key) {
-            $lastOpen = $key.GetValue("LastOpenedPath")
-            if ($lastOpen) {
-                return $lastOpen
-            }
-        }
-
-        # Try alternative path for Visio specifically
-        $path = "Software\Microsoft\Office\16.0\Visio\Recent"
-        $key = $regKey.OpenSubKey($path)
-
-        if ($key) {
-            $subValues = $key.GetValueNames()
-            if ($subValues.Count -gt 0) {
-                return "Recent documents found"
-            }
-        }
-    }
-    catch {
-        # Return null if registry access fails
-    }
-
-    return $null
-}
-
 function Invoke-VisioScan {
     param(
         [array]$Computers,
         [int]$ThreadCount
     )
 
-    Write-Host "`n[*] Starting Visio scan on $($Computers.Count) computers..." -ForegroundColor Cyan
-    Write-Host "[*] Using $ThreadCount parallel threads`n" -ForegroundColor Cyan
+    Write-UiHeader -Title "Enterprise Visio Installation Audit" -Subtitle "Professional Scan Session"
+    Write-UiInfo "Starting scan on $($Computers.Count) computers"
+    Write-UiInfo "Using $ThreadCount parallel threads"
 
     $results = @()
     $scanned = 0
+    $onlineCount = 0
+    $offlineCount = 0
+    $visioCount = 0
 
     # Use RunspacePool for parallel processing
     $runspacePool = [runspacefactory]::CreateRunspacePool(1, $ThreadCount)
@@ -353,11 +385,13 @@ function Invoke-VisioScan {
                 ComputerName      = $ComputerName
                 IsOnline          = $false
                 VisioInstalled    = $false
+                CurrentUser       = $null
                 VisioVersion      = $null
                 VisioEdition      = $null  # Standard, Professional, or null
                 InstallPath       = $null
                 LastAccessTime    = $null
                 LastUsedDate      = $null
+                LastUsageSource   = $null
                 Office365Install  = $false
                 OfficeVersion     = $null
                 Error             = $null
@@ -377,7 +411,18 @@ function Invoke-VisioScan {
                 $session = $null
                 $session = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
 
+                # Detect interactive logged-on user.
+                $computerSystem = Get-CimInstance -CimSession $session -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+                if ($computerSystem -and $computerSystem.UserName) {
+                    $result.CurrentUser = $computerSystem.UserName
+                }
+
                 # Query installed Office products
+                # NOTE: Win32_Product is used here, which has known issues:
+                # 1. It triggers a Windows Installer repair process, which can cause issues
+                # 2. It's slow and inefficient
+                # 3. It may cause unexpected behavior with MSI-based installations
+                # For better results, consider using registry-based detection methods instead
                 $officeProducts = Get-CimInstance -CimSession $session `
                     -ClassName Win32_Product `
                     -Filter "Name LIKE '%Office%' OR Name LIKE '%Visio%'" `
@@ -421,6 +466,13 @@ function Invoke-VisioScan {
                     }
                 }
 
+                # Last-use source 1: live process means Visio is in use now.
+                $visioRunning = Get-CimInstance -CimSession $session -ClassName Win32_Process -Filter "Name='VISIO.EXE'" -ErrorAction SilentlyContinue
+                if ($visioRunning) {
+                    $result.LastUsedDate = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                    $result.LastUsageSource = "RunningProcess"
+                }
+
                 # Check file system for Visio executable
                 foreach ($path in $VisioPaths) {
                     $remoteFile = "\\$ComputerName\$($path -replace ':', '$')"
@@ -431,9 +483,25 @@ function Invoke-VisioScan {
                             $result.VisioInstalled = $true
                             $result.InstallPath = $path
                             $result.LastAccessTime = $fileInfo.LastAccessTime
-                            $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
+                            if (-not $result.LastUsedDate) {
+                                $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
+                                $result.LastUsageSource = "ExecutableLastAccess"
+                            }
                             break
                         }
+                    }
+                }
+
+                # Last-use source 2: prefetch metadata is a better historical signal than EXE access time.
+                if (($result.VisioInstalled -or $visioRunning) -and (-not $result.LastUsageSource -or $result.LastUsageSource -eq "ExecutableLastAccess")) {
+                    $prefetchPath = "\\$ComputerName\C$\Windows\Prefetch"
+                    $lastPrefetch = Get-ChildItem -Path $prefetchPath -Filter "VISIO*.pf" -ErrorAction SilentlyContinue |
+                        Sort-Object -Property LastWriteTime -Descending |
+                        Select-Object -First 1
+
+                    if ($lastPrefetch) {
+                        $result.LastUsedDate = $lastPrefetch.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                        $result.LastUsageSource = "Prefetch"
                     }
                 }
 
@@ -468,7 +536,7 @@ function Invoke-VisioScan {
             return $result
         }
 
-        $job = [powershell]::Create().AddScript($scriptBlock).AddArgument($computer.Name).AddArgument($VisioPaths).AddArgument($RegistryPaths)
+        $job = [powershell]::Create().AddScript($scriptBlock.ToString()).AddArgument($computer.Name).AddArgument($VisioPaths).AddArgument($RegistryPaths)
         $job.RunspacePool = $runspacePool
         $jobs += @{
             Job    = $job
@@ -478,18 +546,32 @@ function Invoke-VisioScan {
 
     # Collect results
     foreach ($jobItem in $jobs) {
-        $result = $jobItem.Job.EndInvoke($jobItem.Handle)
-        $results += $result
+        try {
+            $result = $jobItem.Job.EndInvoke($jobItem.Handle)
+            $results += $result
 
-        [int]$scanned++
-        $installed = if ($result.VisioInstalled) { "[X] Visio" } else { "[ ] No Visio" }
-        $status = if ($result.IsOnline) { "Online" } else { "Offline" }
+            [int]$scanned++
+            if ($result.IsOnline) { $onlineCount++ } else { $offlineCount++ }
+            if ($result.VisioInstalled) { $visioCount++ }
 
-        Write-Progress -Activity "Scanning Computers" -Status "$scanned/$($Computers.Count) - $($result.ComputerName) [$status] $installed" -PercentComplete (($scanned / $Computers.Count) * 100)
+            $status = if ($result.IsOnline) { "Online" } else { "Offline" }
+            $installed = if ($result.VisioInstalled) { "Visio Installed" } else { "No Visio" }
+            $percent = if ($Computers.Count -gt 0) { [int](($scanned / $Computers.Count) * 100) } else { 100 }
+            $progressStatus = "{0}/{1} | Online:{2} Offline:{3} Visio:{4} | {5} [{6}] {7}" -f `
+                $scanned, $Computers.Count, $onlineCount, $offlineCount, $visioCount, $result.ComputerName, $status, $installed
+
+            Write-Progress -Activity "Scanning computers" -Status $progressStatus -PercentComplete $percent
+        }
+        finally {
+            $jobItem.Job.Dispose()
+        }
     }
 
+    Write-Progress -Activity "Scanning computers" -Completed
     $runspacePool.Close()
     $runspacePool.Dispose()
+
+    Write-UiSuccess "Scan finished. Online: $onlineCount, Offline: $offlineCount, Visio Found: $visioCount"
 
     return $results
 }
@@ -519,7 +601,7 @@ function ConvertTo-HtmlReport {
         }
 
         body {
-            font-family: -apple-system, BlinkMacMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 40px 20px;
@@ -724,10 +806,12 @@ function ConvertTo-HtmlReport {
                             <tr>
                                 <th>Computer Name</th>
                                 <th>Status</th>
+                                <th>Current User</th>
                                 <th>Visio Version</th>
                                 <th>Edition</th>
                                 <th>Office 365</th>
                                 <th>Last Used</th>
+                                <th>Usage Source</th>
                                 <th>Install Path</th>
                             </tr>
                         </thead>
@@ -739,11 +823,13 @@ function ConvertTo-HtmlReport {
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
                                 <td><span class="status-online">Online</span></td>
+                                <td>$(if ($computer.CurrentUser) { $computer.CurrentUser } else { 'Unknown' })</td>
                                 <td>$($computer.VisioVersion)</td>
                                 <td>$(if ($computer.VisioEdition) { $computer.VisioEdition } else { 'Unknown' })</td>
                                 <td>$office365Badge</td>
                                 <td>$(if ($computer.LastUsedDate) { $computer.LastUsedDate } else { 'N/A' })</td>
-                                <td style="font-size: 0.9em; color: #666;">$(if ($computer.InstallPath) { $computer.InstallPath } else { 'Standard' })</td>
+                                <td>$(if ($computer.LastUsageSource) { $computer.LastUsageSource } else { 'N/A' })</td>
+                                <td style="font-size: 0.9em; color: #666;">$(if ($computer.InstallPath) { $computer.InstallPath } else { 'N/A' })</td>
                             </tr>
 "@
         }
@@ -854,7 +940,7 @@ function ConvertTo-HtmlReport {
 "@
 
     $html | Out-File -FilePath $OutputFile -Encoding UTF8
-    Write-Host "[+] HTML report saved: $OutputFile" -ForegroundColor Green
+    Write-UiSuccess "HTML report saved: $OutputFile"
 }
 
 function Export-ResultsToCSV {
@@ -867,15 +953,17 @@ function Export-ResultsToCSV {
         @{ Name = "ComputerName"; Expression = { $_.ComputerName } },
         @{ Name = "IsOnline"; Expression = { if ($_.IsOnline) { "Yes" } else { "No" } } },
         @{ Name = "VisioInstalled"; Expression = { if ($_.VisioInstalled) { "Yes" } else { "No" } } },
+        @{ Name = "CurrentUser"; Expression = { if ($_.CurrentUser) { $_.CurrentUser } else { "Unknown" } } },
         @{ Name = "VisioVersion"; Expression = { if ($_.VisioVersion) { $_.VisioVersion } else { "N/A" } } },
         @{ Name = "VisioEdition"; Expression = { if ($_.VisioEdition) { $_.VisioEdition } else { "Unknown" } } },
         @{ Name = "Office365"; Expression = { if ($_.Office365Install) { "Yes" } else { "No" } } },
         @{ Name = "LastUsedDate"; Expression = { if ($_.LastUsedDate) { $_.LastUsedDate } else { "N/A" } } },
+        @{ Name = "LastUsageSource"; Expression = { if ($_.LastUsageSource) { $_.LastUsageSource } else { "N/A" } } },
         @{ Name = "InstallPath"; Expression = { if ($_.InstallPath) { $_.InstallPath } else { "N/A" } } },
         @{ Name = "Error"; Expression = { if ($_.Error) { $_.Error } else { "None" } } } |
     Export-Csv -Path $OutputFile -NoTypeInformation -Encoding UTF8
 
-    Write-Host "[+] CSV report saved: $OutputFile" -ForegroundColor Green
+    Write-UiSuccess "CSV report saved: $OutputFile"
 }
 
 function Get-AuditSummary {
@@ -902,20 +990,22 @@ function Get-AuditSummary {
 # ============================================================================
 
 function Main {
-    Write-Host ("`n" + ("=" * 80))
-    Write-Host "  ENTERPRISE VISIO INSTALLATION AUDIT" -ForegroundColor Cyan
-    Write-Host "  Office 365 / 2019 (x64 Only)" -ForegroundColor Cyan
-    Write-Host (("=" * 80) + "`n")
+    $auditStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     Initialize-AuditEnvironment
 
     # Get computers from Active Directory
-    Write-Host "[*] Targeting OU: $SearchBase" -ForegroundColor Yellow
-    Write-Host "[*] Scanning computers with prefix: $ComputerPrefix*" -ForegroundColor Yellow
+    if ($SearchBase) {
+        Write-UiInfo "Targeting OU: $SearchBase"
+    }
+    else {
+        Write-UiInfo "Searching entire domain"
+    }
+    Write-UiInfo "Scanning computers with prefix: $ComputerPrefix*"
     $computers = Get-DomainComputers -Filter $ComputerFilter -SearchBase $SearchBase -ComputerPrefix $ComputerPrefix
 
     if ($computers.Count -eq 0) {
-        Write-Host "[-] No computers found matching filter" -ForegroundColor Red
+        Write-UiError "No computers found matching filter"
         exit 1
     }
 
@@ -932,24 +1022,23 @@ function Main {
 
     # Display summary
     $summary = Get-AuditSummary -Results $results
+    $auditStopwatch.Stop()
+    $elapsed = $auditStopwatch.Elapsed.ToString("hh\:mm\:ss")
 
-    Write-Host ("`n" + ("=" * 80))
-    Write-Host "  AUDIT SUMMARY" -ForegroundColor Green
-    Write-Host (("=" * 80))
-    Write-Host "Total Computers Scanned: $($summary.TotalComputers)" -ForegroundColor Yellow
-    Write-Host "Online Computers: $($summary.OnlineComputers)" -ForegroundColor Green
-    Write-Host "Offline Computers: $($summary.OfflineComputers)" -ForegroundColor Yellow
-    Write-Host "Computers with Visio: $($summary.VisioInstalled)" -ForegroundColor Green
-    Write-Host "  ├─ Standard Edition:      $($summary.VisioStandard)" -ForegroundColor Cyan
-    Write-Host "  ├─ Professional Edition:  $($summary.VisioProfessional)" -ForegroundColor Cyan
-    Write-Host "  └─ Office 365:            $($summary.Office365Installs)" -ForegroundColor Cyan
-    Write-Host "Access Errors: $($summary.AccessErrors)" -ForegroundColor Red
-    Write-Host (("=" * 80) + "`n")
-
-    Write-Host "[+] Audit complete!" -ForegroundColor Green
-    Write-Host "[+] Reports available at: $OutputPath" -ForegroundColor Green
-    Write-Host "[+] CSV: $csvPath" -ForegroundColor Yellow
-    Write-Host "[+] HTML: $htmlPath" -ForegroundColor Yellow
+    Write-UiHeader -Title "Audit Summary" -Subtitle ("Elapsed Time: {0}" -f $elapsed)
+    Write-UiLine ("Total Computers Scanned : {0}" -f $summary.TotalComputers) "Yellow"
+    Write-UiLine ("Online Computers        : {0}" -f $summary.OnlineComputers) "Green"
+    Write-UiLine ("Offline Computers       : {0}" -f $summary.OfflineComputers) "Yellow"
+    Write-UiLine ("Computers with Visio    : {0}" -f $summary.VisioInstalled) "Green"
+    Write-UiLine ("  - Standard Edition    : {0}" -f $summary.VisioStandard) "Cyan"
+    Write-UiLine ("  - Professional Edition: {0}" -f $summary.VisioProfessional) "Cyan"
+    Write-UiLine ("  - Office 365          : {0}" -f $summary.Office365Installs) "Cyan"
+    Write-UiLine ("Access Errors           : {0}" -f $summary.AccessErrors) "Red"
+    Write-UiLine ""
+    Write-UiSuccess "Audit complete"
+    Write-UiInfo "Reports available at: $OutputPath"
+    Write-UiInfo "CSV : $csvPath"
+    Write-UiInfo "HTML: $htmlPath"
 }
 
 Main

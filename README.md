@@ -38,6 +38,14 @@
 
 ## Scripts Overview
 
+## Documentation Index
+
+- Start here: `documentation/USER_GUIDE.md`
+- Audit implementation details: `documentation/VISIO_AUDIT_GUIDE.md`
+- Troubleshooting: `documentation/TROUBLESHOOTING.md`
+- Deployment: `documentation/DEPLOYMENT.md`
+- Download/package metadata: `documentation/DOWNLOAD_GUIDE.md`, `documentation/PACKAGE_INFO.md`
+
 This suite contains PowerShell scripts for auditing Visio installations and detecting Office versions across your enterprise Active Directory environment.
 
 ### Office-Version-Detector.ps1

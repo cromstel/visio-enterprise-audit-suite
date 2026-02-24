@@ -21,10 +21,10 @@
 # ============================================================================
 
 function Show-Menu {
-    Write-Host "`n╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║  VISIO ENTERPRISE AUDIT - HELPER UTILITIES               ║" -ForegroundColor Cyan
-    Write-Host "║  Supports: Visio 2021 (Std/Pro), Visio 2019, Office 365   ║" -ForegroundColor Cyan
-    Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host ("`n" + ("=" * 72)) -ForegroundColor Cyan
+    Write-Host "VISIO ENTERPRISE AUDIT - HELPER UTILITIES" -ForegroundColor Cyan
+    Write-Host "Supports: Visio 2021 (Std/Pro), Visio 2019, Office 365" -ForegroundColor Cyan
+    Write-Host (("=" * 72)) -ForegroundColor Cyan
     Write-Host ""
     Write-Host "1.  Run Full Installation Audit" -ForegroundColor Yellow
     Write-Host "2.  Run Usage Analytics" -ForegroundColor Yellow
@@ -169,9 +169,9 @@ function Show-ReportSummary {
         return
     }
 
-    Write-Host "`n╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║              LATEST AUDIT REPORT SUMMARY                       ║" -ForegroundColor Cyan
-    Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host ("`n" + ("=" * 72)) -ForegroundColor Cyan
+    Write-Host "LATEST AUDIT REPORT SUMMARY" -ForegroundColor Cyan
+    Write-Host (("=" * 72)) -ForegroundColor Cyan
 
     $data = Import-Csv $latestReport.FullName
 
@@ -191,15 +191,16 @@ function Show-ReportSummary {
     Write-Host "Generated: $($latestReport.LastWriteTime)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Total Computers Scanned:    $($summary.Total)" -ForegroundColor Green
-    Write-Host "  ├─ Online:                $($summary.Online)" -ForegroundColor Green
-    Write-Host "  └─ Offline:               $($summary.Offline)" -ForegroundColor Yellow
+    Write-Host "  - Online:                 $($summary.Online)" -ForegroundColor Green
+    Write-Host "  - Offline:                $($summary.Offline)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Visio Installations:        $($summary.WithVisio)" -ForegroundColor Green
-    Write-Host "  ├─ Standard Edition:      $visioStandard" -ForegroundColor Cyan
-    Write-Host "  ├─ Professional Edition:  $visioProfessional" -ForegroundColor Cyan
-    Write-Host "  └─ Office 365:            $($summary.Office365)" -ForegroundColor Cyan
+    Write-Host "  - Standard Edition:       $visioStandard" -ForegroundColor Cyan
+    Write-Host "  - Professional Edition:   $visioProfessional" -ForegroundColor Cyan
+    Write-Host "  - Office 365:             $($summary.Office365)" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Installation Rate:          $(($summary.WithVisio / $summary.Total * 100).ToString("F1"))%" -ForegroundColor Green
+    $installationRate = if ($summary.Total -gt 0) { (($summary.WithVisio / $summary.Total) * 100).ToString("F1") } else { "0.0" }
+    Write-Host "Installation Rate:          $installationRate%" -ForegroundColor Green
     Write-Host "Access Errors:              $($summary.Errors)" -ForegroundColor Red
     Write-Host ""
 
@@ -243,9 +244,9 @@ function Compare-Reports {
         }
     }
 
-    Write-Host "`n╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║                    CHANGES DETECTED                            ║" -ForegroundColor Cyan
-    Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host ("`n" + ("=" * 72)) -ForegroundColor Cyan
+    Write-Host "CHANGES DETECTED" -ForegroundColor Cyan
+    Write-Host (("=" * 72)) -ForegroundColor Cyan
 
     Write-Host "`nNew Installations: $($newInstalls.Count)" -ForegroundColor Green
     if ($newInstalls.Count -gt 0) {
@@ -291,14 +292,14 @@ function New-CostAnalysis {
     $desktopAnnual = ($desktopStandard + $desktopProfessional) * $DesktopCostPerUser
     $totalAnnual = $office365Annual + $desktopAnnual
 
-    Write-Host "`n╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║                    VISIO LICENSE COST ANALYSIS                 ║" -ForegroundColor Cyan
-    Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host ("`n" + ("=" * 72)) -ForegroundColor Cyan
+    Write-Host "VISIO LICENSE COST ANALYSIS" -ForegroundColor Cyan
+    Write-Host (("=" * 72)) -ForegroundColor Cyan
 
     Write-Host "`nLicense Summary:" -ForegroundColor Green
     Write-Host "  Total Standard Edition:     $visioStandard" -ForegroundColor Cyan
     Write-Host "  Total Professional Edition: $visioProfessional" -ForegroundColor Cyan
-    Write-Host "  ────────────────────────────────────" -ForegroundColor Green
+    Write-Host "  ------------------------------------" -ForegroundColor Green
     Write-Host "  Office 365 Subscriptions:   $office365Count" -ForegroundColor Cyan
     Write-Host "  Desktop Standard Licenses:  $desktopStandard" -ForegroundColor Cyan
     Write-Host "  Desktop Professional:       $desktopProfessional" -ForegroundColor Cyan
@@ -307,7 +308,7 @@ function New-CostAnalysis {
     Write-Host "`nCost Breakdown (Annual):" -ForegroundColor Green
     Write-Host "  Office 365 Cost:             `$$([Math]::Round($office365Annual, 2))" -ForegroundColor Green
     Write-Host "  Desktop License Cost:        `$$([Math]::Round($desktopAnnual, 2))" -ForegroundColor Green
-    Write-Host "  ────────────────────────────────────" -ForegroundColor Green
+    Write-Host "  ------------------------------------" -ForegroundColor Green
     Write-Host "  TOTAL ANNUAL COST:           `$$([Math]::Round($totalAnnual, 2))" -ForegroundColor Yellow
 
     Write-Host "`nMonthly Cost:                 `$$([Math]::Round($totalAnnual / 12, 2))" -ForegroundColor Yellow
@@ -492,7 +493,12 @@ function Start-InteractiveMenu {
                 Write-Host "3. Monthly"
                 $freq = Read-Host "Select frequency"
                 $freqMap = @{ "1" = "Daily"; "2" = "Weekly"; "3" = "Monthly" }
-                New-ScheduledAudit -Frequency $freqMap[$freq]
+                if ($freqMap.ContainsKey($freq)) {
+                    New-ScheduledAudit -Frequency $freqMap[$freq]
+                }
+                else {
+                    Write-Host "Invalid frequency selection. Please choose 1, 2, or 3." -ForegroundColor Red
+                }
                 Pause
             }
             "10" {
@@ -519,8 +525,8 @@ function Start-InteractiveMenu {
                         Write-Host "`n$($group.Name):" -ForegroundColor Cyan
                         Write-Host "  Total: $($group.Group.Count)" -ForegroundColor Yellow
                         Write-Host "  With Visio: $($withVisio.Count)" -ForegroundColor Green
-                        Write-Host "    ├─ Standard: $($standardEdition.Count)" -ForegroundColor Cyan
-                        Write-Host "    └─ Professional: $($professionalEdition.Count)" -ForegroundColor Cyan
+                        Write-Host "    - Standard: $($standardEdition.Count)" -ForegroundColor Cyan
+                        Write-Host "    - Professional: $($professionalEdition.Count)" -ForegroundColor Cyan
                     }
                 }
                 Pause

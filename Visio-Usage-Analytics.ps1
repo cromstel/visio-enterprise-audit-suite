@@ -23,6 +23,7 @@ param(
     [string]$ComputerFilter = "*",
 
     [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 64)]
     [int]$ThreadCount = 10,
 
     [Parameter(Mandatory = $false)]
@@ -74,7 +75,7 @@ function Initialize-AuditEnvironment {
         Write-Host "Output directory: $OutputPath" -ForegroundColor Green
     }
     catch {
-        Write-Error "Failed to create output directory '$OutputPath': $_.Exception.Message"
+        Write-Error "Failed to create output directory '$OutputPath': $($_.Exception.Message)"
         Write-Error "Please check permissions and path validity."
         exit 1
     }
@@ -99,10 +100,6 @@ function Get-DomainComputers {
             Properties  = @("Name", "OperatingSystem", "LastLogonDate")
             ErrorAction = "Stop"
             SearchBase  = $SearchBase
-        }
-        
-        if ($Domain) {
-            $getADParams.Server = $Domain
         }
         
         $computers = Get-ADComputer @getADParams |
@@ -160,7 +157,19 @@ function Get-DetailedVisioUsage {
 
         if ($visioProcess) {
             $usage.ProcessRunning = $true
-            $usage.ActiveUser = $visioProcess.GetOwner().User
+
+            $ownerFound = $false
+            foreach ($process in @($visioProcess)) {
+                $ownerInfo = Invoke-CimMethod -InputObject $process -MethodName GetOwner -ErrorAction SilentlyContinue
+                if ($ownerInfo -and $ownerInfo.ReturnValue -eq 0 -and $ownerInfo.User) {
+                    $usage.ActiveUser = $ownerInfo.User
+                    $ownerFound = $true
+                    break
+                }
+            }
+            if (-not $ownerFound) {
+                $usage.ActiveUser = "Unknown"
+            }
         }
 
         # Get file associations for Visio (VSD, VSDX, etc.)
@@ -457,7 +466,7 @@ function New-UsageAnalyticsReport {
 
     foreach ($computer in $UsageData) {
         if ($computer.IsOnline) {
-            $running = if ($computer.ProcessRunning) { '<span class="status-active">● Running</span>' } else { '<span class="status-inactive">Not Running</span>' }
+            $running = if ($computer.ProcessRunning) { '<span class="status-active">Running</span>' } else { '<span class="status-inactive">Not Running</span>' }
 			$user = if ($null -ne $computer.ActiveUser -and $computer.ActiveUser -ne "") {
 				$computer.ActiveUser
 			} else {
