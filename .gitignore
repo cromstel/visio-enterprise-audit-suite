@@ -13,3 +13,4 @@ errors.md       # Markdown files that may contain sensitive information
 .backups/       # Backup files that may contain sensitive information
 *.bak           # Backup files that may contain sensitive information
 *.backup        # Backup files that may contain sensitive information
+*.log            # Log files that may contain sensitive information

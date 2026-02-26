@@ -112,6 +112,7 @@ This script queries Active Directory for all computers, then uses WMI/Registry t
 | `-IncludeOfflineComputers` | switch | $false | Include offline computers in scan |
 | `-ComputerPrefix` | string | `GOT` | Computer name prefix filter (e.g., GOT*) |
 | `-SearchBase` | string | `OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra` | LDAP path to the OU to search |
+| `-ScanCredential` | PSCredential | _None_ | Optional credential that is local admin on target hosts; pass `(Get-Credential)` when you lack a domain admin account. |
 
 **Usage Examples:**
 ```powershell
@@ -151,6 +152,23 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 ```
 
 **Windows Server:** Prerequisites are pre-installed.
+
+### Local admin scanning (Access error 397)
+
+If you do not have a domain admin account, supply a local admin credential via `-ScanCredential`. The audit uses that credential for CIM/WinRM calls and, when WMI access is denied (access error 397), falls back to a remote helper script that runs on each host via `Invoke-Command`.
+
+```powershell
+$cred = Get-Credential            # prompt for the local admin account shared across the OU
+.\Visio-Enterprise-Audit.ps1 -ScanCredential $cred -ThreadCount 20 -SearchBase "<Your OU>"
+
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
+    -Name "LocalAccountTokenFilterPolicy" -Value 1
+
+Enable-NetFirewallRule -DisplayGroup "Windows Management Instrumentation (WMI)"
+Enable-PSRemoting -Force          # ensures WinRM listens on the targets
+```
+
+Enabling `LocalAccountTokenFilterPolicy` stops Windows from stripping the remote token from the local account, while the firewall rule and PSRemoting ensure `Invoke-Command` can connect. Run these commands per host or push via Group Policy before the audit.
 
 ---
 

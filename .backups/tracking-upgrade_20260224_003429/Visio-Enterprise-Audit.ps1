@@ -46,10 +46,7 @@ param(
 
     # Target specific OU within the domain
     [Parameter(Mandatory = $false)]
-    [string]$SearchBase,
-
-    [Parameter(Mandatory = $false)]
-    [PSCredential]$ScanCredential
+    [string]$SearchBase
 )
 
 # ============================================================================
@@ -96,70 +93,6 @@ $RegistryPaths = @(
     "HKLM:\Software\Wow6432Node\Microsoft\Office\15.0\Common\InstallRoot",      # Visio 2019 x86
     "HKLM:\Software\Wow6432Node\Microsoft\Visio\InstallRoot"                    # Standalone Visio x86
 )
-
-# Fallback helper run on target hosts when WMI/CIM access is blocked
-$RemoteVisioFallbackScript = {
-    param($Paths, $RegPaths)
-
-    $fallbackResult = [PSCustomObject]@{
-        VisioInstalled    = $false
-        InstallPath       = $null
-        LastAccessTime    = $null
-        LastUsedDate      = $null
-        LastUsageSource   = $null
-        Office365Install  = $false
-        OfficeVersion     = $null
-    }
-
-    foreach ($path in $Paths) {
-        if (Test-Path $path -PathType Leaf) {
-            $fileInfo = Get-Item $path -ErrorAction SilentlyContinue
-            if ($fileInfo) {
-                $fallbackResult.VisioInstalled = $true
-                $fallbackResult.InstallPath = $path
-                $fallbackResult.LastAccessTime = $fileInfo.LastAccessTime
-                $fallbackResult.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
-                $fallbackResult.LastUsageSource = "ExecutableLastAccess"
-                break
-            }
-        }
-    }
-
-    if (-not $fallbackResult.LastUsedDate) {
-        $prefetchDir = Join-Path $env:SystemRoot "Prefetch"
-        $lastPrefetch = Get-ChildItem -Path $prefetchDir -Filter "VISIO*.pf" -ErrorAction SilentlyContinue |
-            Sort-Object -Property LastWriteTime -Descending |
-            Select-Object -First 1
-
-        if ($lastPrefetch) {
-            $fallbackResult.LastUsedDate = $lastPrefetch.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-            $fallbackResult.LastUsageSource = "Prefetch"
-        }
-    }
-
-    foreach ($regPath in $RegPaths) {
-        try {
-            $key = Get-ItemProperty -Path $regPath -ErrorAction Stop
-            $installPath = $key.Path
-            if ($installPath) {
-                $fallbackResult.InstallPath = $installPath
-                $fallbackResult.VisioInstalled = $true
-                $fallbackResult.Office365Install = $true
-                if ($key.Version) {
-                    $fallbackResult.OfficeVersion = $key.Version
-                }
-                if (-not $fallbackResult.LastUsageSource) {
-                    $fallbackResult.LastUsageSource = "Registry"
-                }
-            }
-        }
-        catch {
-            # ignore registry access issues in fallback mode
-        }
-    }
-
-    return $fallbackResult
-}
 
 # ============================================================================
 # FUNCTIONS
@@ -264,21 +197,18 @@ function Get-VisioInstallationInfo {
     param(
         [string]$ComputerName,
         [string[]]$Paths,
-        [string[]]$RegPaths,
-        [PSCredential]$Credential
+        [string[]]$RegPaths
     )
 
     $result = @{
         ComputerName      = $ComputerName
         IsOnline          = $false
         VisioInstalled    = $false
-        CurrentUser       = $null
         VisioVersion      = $null
         VisioEdition      = $null  # Standard, Professional, or null
         InstallPath       = $null
         LastAccessTime    = $null
         LastUsedDate      = $null
-        LastUsageSource   = $null
         Office365Install  = $false
         OfficeVersion     = $null
         Error             = $null
@@ -295,20 +225,7 @@ function Get-VisioInstallationInfo {
     try {
         # Initialize session variable before try block
         $session = $null
-        $sessionParams = @{
-            ComputerName = $ComputerName
-            ErrorAction  = "Stop"
-        }
-        if ($Credential) {
-            $sessionParams.Credential = $Credential
-        }
-        $session = New-CimSession @sessionParams
-
-        # Detect interactive logged-on user.
-        $computerSystem = Get-CimInstance -CimSession $session -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
-        if ($computerSystem -and $computerSystem.UserName) {
-            $result.CurrentUser = $computerSystem.UserName
-        }
+        $session = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
 
         # Query installed Office products
         # NOTE: Win32_Product is used here, which has known issues:
@@ -359,13 +276,6 @@ function Get-VisioInstallationInfo {
             }
         }
 
-        # Last-use source 1: live process means Visio is in use now.
-        $visioRunning = Get-CimInstance -CimSession $session -ClassName Win32_Process -Filter "Name='VISIO.EXE'" -ErrorAction SilentlyContinue
-        if ($visioRunning) {
-            $result.LastUsedDate = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-            $result.LastUsageSource = "RunningProcess"
-        }
-
         # Check file system for Visio executable
         foreach ($path in $Paths) {
             $remoteFile = "\\$ComputerName\$($path -replace ':', '$')"
@@ -376,25 +286,9 @@ function Get-VisioInstallationInfo {
                     $result.VisioInstalled = $true
                     $result.InstallPath = $path
                     $result.LastAccessTime = $fileInfo.LastAccessTime
-                    if (-not $result.LastUsedDate) {
-                        $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
-                        $result.LastUsageSource = "ExecutableLastAccess"
-                    }
+                    $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
                     break
                 }
-            }
-        }
-
-        # Last-use source 2: prefetch metadata is a better historical signal than EXE access time.
-        if (($result.VisioInstalled -or $visioRunning) -and (-not $result.LastUsageSource -or $result.LastUsageSource -eq "ExecutableLastAccess")) {
-            $prefetchPath = "\\$ComputerName\C$\Windows\Prefetch"
-            $lastPrefetch = Get-ChildItem -Path $prefetchPath -Filter "VISIO*.pf" -ErrorAction SilentlyContinue |
-                Sort-Object -Property LastWriteTime -Descending |
-                Select-Object -First 1
-
-            if ($lastPrefetch) {
-                $result.LastUsedDate = $lastPrefetch.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-                $result.LastUsageSource = "Prefetch"
             }
         }
 
@@ -420,54 +314,10 @@ function Get-VisioInstallationInfo {
             }
         }
 
-        if ($session) {
-            Remove-CimSession $session
-        }
+        Remove-CimSession $session
     }
     catch {
-        $result.Error = "Access denied (CIM 397) or WMI unavailable"
-
-        $invokeParams = @{
-            ComputerName = $ComputerName
-            ScriptBlock  = $RemoteVisioFallbackScript
-            ArgumentList = @($Paths, $RegPaths)
-            ErrorAction  = "SilentlyContinue"
-        }
-        if ($Credential) {
-            $invokeParams.Credential = $Credential
-        }
-
-        $fallbackResult = Invoke-Command @invokeParams
-        if ($fallbackResult -is [System.Collections.IEnumerable]) {
-            $fallbackResult = $fallbackResult | Select-Object -First 1
-        }
-
-        if ($fallbackResult -and $fallbackResult.VisioInstalled) {
-            $result.VisioInstalled = $true
-            if ($fallbackResult.InstallPath) {
-                $result.InstallPath = $fallbackResult.InstallPath
-            }
-            if ($fallbackResult.LastAccessTime) {
-                $result.LastAccessTime = $fallbackResult.LastAccessTime
-            }
-            if ($fallbackResult.LastUsedDate) {
-                $result.LastUsedDate = $fallbackResult.LastUsedDate
-            }
-            if ($fallbackResult.LastUsageSource) {
-                $result.LastUsageSource = $fallbackResult.LastUsageSource
-            }
-            $result.Office365Install = $fallbackResult.Office365Install
-            if ($fallbackResult.OfficeVersion) {
-                $result.OfficeVersion = $fallbackResult.OfficeVersion
-            }
-            if (-not $result.VisioVersion -and $fallbackResult.OfficeVersion) {
-                $result.VisioVersion = $fallbackResult.OfficeVersion
-            }
-            $result.Error = "Access denied (CIM 397); remote fallback scanned Visio files"
-        }
-        elseif ($fallbackResult) {
-            $result.Error = "$($result.Error); fallback scan completed, no Visio detected"
-        }
+        $result.Error = "WMI access denied or unavailable"
     }
 
     return $result
@@ -476,16 +326,12 @@ function Get-VisioInstallationInfo {
 function Invoke-VisioScan {
     param(
         [array]$Computers,
-        [int]$ThreadCount,
-        [PSCredential]$ScanCredential
+        [int]$ThreadCount
     )
 
     Write-UiHeader -Title "Enterprise Visio Installation Audit" -Subtitle "Professional Scan Session"
     Write-UiInfo "Starting scan on $($Computers.Count) computers"
     Write-UiInfo "Using $ThreadCount parallel threads"
-    if ($ScanCredential) {
-        Write-UiInfo ("Credential provided for remote scans: {0}" -f $ScanCredential.UserName)
-    }
 
     $results = @()
     $scanned = 0
@@ -501,20 +347,18 @@ function Invoke-VisioScan {
 
     foreach ($computer in $Computers) {
         $scriptBlock = {
-            param($ComputerName, $VisioPaths, $RegistryPaths, $ScanCredential, $FallbackScript)
+            param($ComputerName, $VisioPaths, $RegistryPaths)
             
             # Inline function logic for runspace scope compatibility
             $result = @{
                 ComputerName      = $ComputerName
                 IsOnline          = $false
                 VisioInstalled    = $false
-                CurrentUser       = $null
                 VisioVersion      = $null
                 VisioEdition      = $null  # Standard, Professional, or null
                 InstallPath       = $null
                 LastAccessTime    = $null
                 LastUsedDate      = $null
-                LastUsageSource   = $null
                 Office365Install  = $false
                 OfficeVersion     = $null
                 Error             = $null
@@ -532,20 +376,7 @@ function Invoke-VisioScan {
             try {
                 # Check installed software via WMI
                 $session = $null
-                $sessionParams = @{
-                    ComputerName = $ComputerName
-                    ErrorAction  = "Stop"
-                }
-                if ($ScanCredential) {
-                    $sessionParams.Credential = $ScanCredential
-                }
-                $session = New-CimSession @sessionParams
-
-                # Detect interactive logged-on user.
-                $computerSystem = Get-CimInstance -CimSession $session -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
-                if ($computerSystem -and $computerSystem.UserName) {
-                    $result.CurrentUser = $computerSystem.UserName
-                }
+                $session = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
 
                 # Query installed Office products
                 # NOTE: Win32_Product is used here, which has known issues:
@@ -596,13 +427,6 @@ function Invoke-VisioScan {
                     }
                 }
 
-                # Last-use source 1: live process means Visio is in use now.
-                $visioRunning = Get-CimInstance -CimSession $session -ClassName Win32_Process -Filter "Name='VISIO.EXE'" -ErrorAction SilentlyContinue
-                if ($visioRunning) {
-                    $result.LastUsedDate = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-                    $result.LastUsageSource = "RunningProcess"
-                }
-
                 # Check file system for Visio executable
                 foreach ($path in $VisioPaths) {
                     $remoteFile = "\\$ComputerName\$($path -replace ':', '$')"
@@ -613,25 +437,9 @@ function Invoke-VisioScan {
                             $result.VisioInstalled = $true
                             $result.InstallPath = $path
                             $result.LastAccessTime = $fileInfo.LastAccessTime
-                            if (-not $result.LastUsedDate) {
-                                $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
-                                $result.LastUsageSource = "ExecutableLastAccess"
-                            }
+                            $result.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
                             break
                         }
-                    }
-                }
-
-                # Last-use source 2: prefetch metadata is a better historical signal than EXE access time.
-                if (($result.VisioInstalled -or $visioRunning) -and (-not $result.LastUsageSource -or $result.LastUsageSource -eq "ExecutableLastAccess")) {
-                    $prefetchPath = "\\$ComputerName\C$\Windows\Prefetch"
-                    $lastPrefetch = Get-ChildItem -Path $prefetchPath -Filter "VISIO*.pf" -ErrorAction SilentlyContinue |
-                        Sort-Object -Property LastWriteTime -Descending |
-                        Select-Object -First 1
-
-                    if ($lastPrefetch) {
-                        $result.LastUsedDate = $lastPrefetch.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-                        $result.LastUsageSource = "Prefetch"
                     }
                 }
 
@@ -657,60 +465,16 @@ function Invoke-VisioScan {
                     }
                 }
 
-                if ($session) {
-                    Remove-CimSession $session
-                }
+                Remove-CimSession $session
             }
             catch {
-                $result.Error = "Access denied (CIM 397) or WMI unavailable"
-
-                $invokeParams = @{
-                    ComputerName = $ComputerName
-                    ScriptBlock  = $FallbackScript
-                    ArgumentList = @($VisioPaths, $RegistryPaths)
-                    ErrorAction  = "SilentlyContinue"
-                }
-                if ($ScanCredential) {
-                    $invokeParams.Credential = $ScanCredential
-                }
-
-                $fallbackResult = Invoke-Command @invokeParams
-                if ($fallbackResult -is [System.Collections.IEnumerable]) {
-                    $fallbackResult = $fallbackResult | Select-Object -First 1
-                }
-
-                if ($fallbackResult -and $fallbackResult.VisioInstalled) {
-                    $result.VisioInstalled = $true
-                    if ($fallbackResult.InstallPath) {
-                        $result.InstallPath = $fallbackResult.InstallPath
-                    }
-                    if ($fallbackResult.LastAccessTime) {
-                        $result.LastAccessTime = $fallbackResult.LastAccessTime
-                    }
-                    if ($fallbackResult.LastUsedDate) {
-                        $result.LastUsedDate = $fallbackResult.LastUsedDate
-                    }
-                    if ($fallbackResult.LastUsageSource) {
-                        $result.LastUsageSource = $fallbackResult.LastUsageSource
-                    }
-                    $result.Office365Install = $fallbackResult.Office365Install
-                    if ($fallbackResult.OfficeVersion) {
-                        $result.OfficeVersion = $fallbackResult.OfficeVersion
-                    }
-                    if (-not $result.VisioVersion -and $fallbackResult.OfficeVersion) {
-                        $result.VisioVersion = $fallbackResult.OfficeVersion
-                    }
-                    $result.Error = "Access denied (CIM 397); remote fallback scanned Visio files"
-                }
-                elseif ($fallbackResult) {
-                    $result.Error = "$($result.Error); fallback scan completed, no Visio detected"
-                }
+                $result.Error = "WMI access denied or unavailable"
             }
             
             return $result
         }
 
-        $job = [powershell]::Create().AddScript($scriptBlock.ToString()).AddArgument($computer.Name).AddArgument($VisioPaths).AddArgument($RegistryPaths).AddArgument($ScanCredential).AddArgument($RemoteVisioFallbackScript)
+        $job = [powershell]::Create().AddScript($scriptBlock.ToString()).AddArgument($computer.Name).AddArgument($VisioPaths).AddArgument($RegistryPaths)
         $job.RunspacePool = $runspacePool
         $jobs += @{
             Job    = $job
@@ -980,12 +744,10 @@ function ConvertTo-HtmlReport {
                             <tr>
                                 <th>Computer Name</th>
                                 <th>Status</th>
-                                <th>Current User</th>
                                 <th>Visio Version</th>
                                 <th>Edition</th>
                                 <th>Office 365</th>
                                 <th>Last Used</th>
-                                <th>Usage Source</th>
                                 <th>Install Path</th>
                             </tr>
                         </thead>
@@ -997,12 +759,10 @@ function ConvertTo-HtmlReport {
                             <tr>
                                 <td><strong>$($computer.ComputerName)</strong></td>
                                 <td><span class="status-online">Online</span></td>
-                                <td>$(if ($computer.CurrentUser) { $computer.CurrentUser } else { 'Unknown' })</td>
                                 <td>$($computer.VisioVersion)</td>
                                 <td>$(if ($computer.VisioEdition) { $computer.VisioEdition } else { 'Unknown' })</td>
                                 <td>$office365Badge</td>
                                 <td>$(if ($computer.LastUsedDate) { $computer.LastUsedDate } else { 'N/A' })</td>
-                                <td>$(if ($computer.LastUsageSource) { $computer.LastUsageSource } else { 'N/A' })</td>
                                 <td style="font-size: 0.9em; color: #666;">$(if ($computer.InstallPath) { $computer.InstallPath } else { 'N/A' })</td>
                             </tr>
 "@
@@ -1127,12 +887,10 @@ function Export-ResultsToCSV {
         @{ Name = "ComputerName"; Expression = { $_.ComputerName } },
         @{ Name = "IsOnline"; Expression = { if ($_.IsOnline) { "Yes" } else { "No" } } },
         @{ Name = "VisioInstalled"; Expression = { if ($_.VisioInstalled) { "Yes" } else { "No" } } },
-        @{ Name = "CurrentUser"; Expression = { if ($_.CurrentUser) { $_.CurrentUser } else { "Unknown" } } },
         @{ Name = "VisioVersion"; Expression = { if ($_.VisioVersion) { $_.VisioVersion } else { "N/A" } } },
         @{ Name = "VisioEdition"; Expression = { if ($_.VisioEdition) { $_.VisioEdition } else { "Unknown" } } },
         @{ Name = "Office365"; Expression = { if ($_.Office365Install) { "Yes" } else { "No" } } },
         @{ Name = "LastUsedDate"; Expression = { if ($_.LastUsedDate) { $_.LastUsedDate } else { "N/A" } } },
-        @{ Name = "LastUsageSource"; Expression = { if ($_.LastUsageSource) { $_.LastUsageSource } else { "N/A" } } },
         @{ Name = "InstallPath"; Expression = { if ($_.InstallPath) { $_.InstallPath } else { "N/A" } } },
         @{ Name = "Error"; Expression = { if ($_.Error) { $_.Error } else { "None" } } } |
     Export-Csv -Path $OutputFile -NoTypeInformation -Encoding UTF8
@@ -1184,7 +942,7 @@ function Main {
     }
 
     # Perform scan
-    $results = Invoke-VisioScan -Computers $computers -ThreadCount $ThreadCount -ScanCredential $ScanCredential
+    $results = Invoke-VisioScan -Computers $computers -ThreadCount $ThreadCount
 
     # Generate reports
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"

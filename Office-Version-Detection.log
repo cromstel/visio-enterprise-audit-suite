@@ -1,0 +1,71 @@
+========================================
+Office Version Detection Log
+Started: 2026-02-12 11:11:45
+========================================
+[2026-02-12 11:11:45] [INFO] [Start-OfficeDetection] Log file initialized: .\Office-Version-Detection.log
+[2026-02-12 11:11:45] [INFO] [Start-OfficeDetection] Step 1: Checking Click-to-Run installations...
+[2026-02-12 11:11:45] [INFO] [Test-ClickToRunInstallation] Checking Click-to-Run installation detection
+[2026-02-12 11:11:45] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration\Version
+[2026-02-12 11:11:45] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration
+[2026-02-12 11:11:45] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration\ProductName
+[2026-02-12 11:11:45] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration
+[2026-02-12 11:11:45] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration\UpdateChannel
+[2026-02-12 11:11:45] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration
+[2026-02-12 11:11:45] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration\SOFTWARE\Microsoft\Office\ClickToRun\Configuration\Version
+[2026-02-12 11:11:46] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration\SOFTWARE\Microsoft\Office\ClickToRun\Configuration
+[2026-02-12 11:11:46] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration\SOFTWARE\Microsoft\Office\ClickToRun\Configuration\ProductName
+[2026-02-12 11:11:46] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration\SOFTWARE\Microsoft\Office\ClickToRun\Configuration
+[2026-02-12 11:11:46] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration\SOFTWARE\Microsoft\Office\ClickToRun\Configuration\UpdateChannel
+[2026-02-12 11:11:46] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration\SOFTWARE\Microsoft\Office\ClickToRun\Configuration
+[2026-02-12 11:11:46] [DEBUG] [Test-ClickToRunInstallation] No Click-to-Run installation detected
+[2026-02-12 11:11:46] [INFO] [Start-OfficeDetection] Step 2: Checking MSI installations...
+[2026-02-12 11:11:46] [INFO] [Test-MSIInstallation] Checking MSI installation detection
+[2026-02-12 11:11:46] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Office\16.0\Configuration\Version
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Microsoft\Office\16.0\Configuration
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Office\16.0\Configuration\ProductName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry key does not exist: HKLM:\SOFTWARE\Microsoft\Office\16.0\Configuration
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{010792BA-551A-3AC0-A7EF-0FAB4156C382}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: Microsoft Visual C++ 2013 x64 Additional Runtime - 12.0.40664
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{010792BA-551A-3AC0-A7EF-0FAB4156C382}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 12.0.40664
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{0A46A65D-89AC-464C-8026-3CD44960BD04}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: Realtek USB Audio
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{0A46A65D-89AC-464C-8026-3CD44960BD04}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 6.4.0.393
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{17796717-E924-4198-BC42-BE20338FADA2}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: MySQL Server 8.0
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{17796717-E924-4198-BC42-BE20338FADA2}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 8.0.44
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{34B7DBB1-57B0-41D6-9AF3-8E408E7A3F1B}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: GitHub CLI
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{34B7DBB1-57B0-41D6-9AF3-8E408E7A3F1B}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 2.85.0
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{3C876E4D-B486-49FA-AB33-D94367357A69}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: Microsoft Application Request Routing 3.0
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{3C876E4D-B486-49FA-AB33-D94367357A69}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 3.0.05311
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{43B0D101-A022-48F4-9D04-BA404CEB1D53}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: Microsoft Visual C++ 2022 X64 Minimum Runtime - 14.44.35211
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{43B0D101-A022-48F4-9D04-BA404CEB1D53}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 14.44.35211
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{53CF6934-A98D-3D84-9146-FC4EDF3D5641}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: Microsoft Visual C++ 2013 x64 Minimum Runtime - 12.0.40664
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{53CF6934-A98D-3D84-9146-FC4EDF3D5641}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 12.0.40664
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{86AB2CC9-08BD-4643-B0F9-F82D006D72FF}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: Microsoft Visual C++ 2022 X64 Additional Runtime - 14.44.35211
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{86AB2CC9-08BD-4643-B0F9-F82D006D72FF}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 14.44.35211
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A7AB73A3-CB10-4AA5-9D38-6AEFFBDE4C91}\DisplayName
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: Microsoft Teams Meeting Add-in for Microsoft Office
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Reading registry value: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A7AB73A3-CB10-4AA5-9D38-6AEFFBDE4C91}\DisplayVersion
+[2026-02-12 11:11:47] [DEBUG] [Read-RegistryValue] Registry value retrieved: 1.25.28902
+[2026-02-12 11:11:47] [DEBUG] [Test-MSIInstallation] Found Office entry in Uninstall: Microsoft Teams Meeting Add-in for Microsoft Office version 1.25.28902
+[2026-02-12 11:11:47] [INFO] [Start-OfficeDetection] Detection successful via MSI
+[2026-02-12 11:11:47] [INFO] [Start-OfficeDetection] Version: 1.25.28902
+[2026-02-12 11:11:47] [INFO] [Start-OfficeDetection] Product: Microsoft Teams Meeting Add-in for Microsoft Office
+[2026-02-12 11:11:47] [INFO] [Test-OfficeVersionValidation] Validating Office version: 1.25.28902, Product: Microsoft Teams Meeting Add-in for Microsoft Office
+[2026-02-12 11:11:47] [WARNING] [Test-OfficeVersionValidation] Version 1.25.28902 is not in Office 2016+ family (must start with 16.0)
+[2026-02-12 11:11:47] [WARNING] [Start-OfficeDetection] UNSUPPORTED: Office 1.25.28902 detected - This script only supports Office 365 and Office 2019
+[2026-02-12 11:11:47] [INFO] [Start-OfficeDetection] Office detection process completed
+[2026-02-12 11:11:47] [INFO] [Start-OfficeDetection] ========================================
