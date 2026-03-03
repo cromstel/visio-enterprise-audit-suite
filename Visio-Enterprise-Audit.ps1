@@ -1165,6 +1165,7 @@ function Get-AuditSummary {
         VisioProfessional     = ($Results | Where-Object { $_.VisioEdition -eq "Professional" }).Count
         Office365Installs     = ($Results | Where-Object { $_.Office365Install }).Count
         AccessErrors          = ($Results | Where-Object { $_.Error }).Count
+        Cim397Errors          = ($Results | Where-Object { $_.Error -match "CIM 397" }).Count
     }
 
     return $summary
@@ -1219,6 +1220,10 @@ function Main {
     Write-UiLine ("  - Professional Edition: {0}" -f $summary.VisioProfessional) "Cyan"
     Write-UiLine ("  - Office 365          : {0}" -f $summary.Office365Installs) "Cyan"
     Write-UiLine ("Access Errors           : {0}" -f $summary.AccessErrors) "Red"
+    if ($summary.Cim397Errors -gt 0) {
+        Write-UiWarn ("Detected {0} host(s) reporting Access Denied (CIM 397). Supply a local admin credential via -ScanCredential and ensure WinRM/DCOM is reachable from the audit host." -f $summary.Cim397Errors)
+        Write-UiInfo "When WinRM is blocked, the fallback script already inspects Visio files locally, but WinRM/remote registry access is the most reliable option."
+    }
     Write-UiLine ""
     Write-UiSuccess "Audit complete"
     Write-UiInfo "Reports available at: $OutputPath"

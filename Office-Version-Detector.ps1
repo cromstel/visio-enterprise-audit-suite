@@ -80,7 +80,7 @@ param(
 [string]$script:RegistryPathWow6432 = "SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration"
 
 # Supported Office version identifiers
-[string[]]$script:Office365Identifiers = @("O365", "Microsoft 365 Apps", "Microsoft 365", "365")
+[string[]]$script:Office365Identifiers = @("O365", "Microsoft 365 Apps", "Microsoft 365 Apps for enterprise", "Microsoft 365", "365")
 [string[]]$script:Office2019Identifiers = @("2019")
 
 #endregion
@@ -474,7 +474,14 @@ function Test-OfficeVersionValidation {
                 return $result
             }
         }
-        
+
+        if ($Version -match '^10\.0\.\d+') {
+            $result.IsSupported = $true
+            $result.OfficeType = "Office 365"
+            Write-LogMessage -Message "Version $Version (10.0.*) treated as Microsoft 365 Apps (10.0.60910 support)" -Level INFO -FunctionName "Test-OfficeVersionValidation"
+            return $result
+        }
+
         # If we reach here with 16.0 version but no specific identifier, it could be Office 2016 or other
         Write-LogMessage -Message "Version 16.0.x detected but no Office 365/2019 identifier found in: $ProductName" -Level WARNING -FunctionName "Test-OfficeVersionValidation"
         return $result

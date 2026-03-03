@@ -17,13 +17,36 @@
 #>
 
 # ============================================================================
+# UTILITY CONFIGURATION
+# ============================================================================
+[PSCredential]$script:VisioScanCredential = $null
+
+function Get-VisioScanCredential {
+    [CmdletBinding()]
+    param(
+        [switch]$Force
+    )
+
+    if (-not $Force -and $script:VisioScanCredential) {
+        return $script:VisioScanCredential
+    }
+
+    $useAlt = Read-Host "Use an alternate local admin credential for remote scans? (Y/N)"
+    if ($useAlt -match '^[Yy]') {
+        $script:VisioScanCredential = Get-Credential -Message "Enter the local admin credential used by the audit"
+    }
+
+    return $script:VisioScanCredential
+}
+
+# ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
 function Show-Menu {
     Write-Host ("`n" + ("=" * 72)) -ForegroundColor Cyan
     Write-Host "VISIO ENTERPRISE AUDIT - HELPER UTILITIES" -ForegroundColor Cyan
-    Write-Host "Supports: Visio 2021 (Std/Pro), Visio 2019, Office 365" -ForegroundColor Cyan
+    Write-Host "Supports: Visio 2021/2019, Office 365, and local-admin credential prompts" -ForegroundColor Cyan
     Write-Host (("=" * 72)) -ForegroundColor Cyan
     Write-Host ""
     Write-Host "1.  Run Full Installation Audit" -ForegroundColor Yellow
@@ -38,6 +61,7 @@ function Show-Menu {
     Write-Host "10. Select Report by Department" -ForegroundColor Yellow
     Write-Host "11. Generate Department Summary" -ForegroundColor Yellow
     Write-Host "12. Exit" -ForegroundColor Yellow
+    Write-Host "13. Show Access Error 397 Guidance" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -45,7 +69,8 @@ function Invoke-FullAudit {
     param(
         [string]$OutputPath,
         [string]$ComputerPrefix = "GOT",
-        [int]$Threads = 10
+        [int]$Threads = 10,
+        [PSCredential]$ScanCredential
     )
     
     Write-Host "`n[*] Starting full Visio audit..." -ForegroundColor Cyan
@@ -55,12 +80,49 @@ function Invoke-FullAudit {
         $OutputPath = "$scriptPath\Output\VisioAudit"
     }
 
-    & "$scriptPath\visio-enterprise-audit.ps1" `
-        -OutputPath $OutputPath `
-        -ComputerPrefix $ComputerPrefix `
-        -ThreadCount $Threads
+    $credential = if ($ScanCredential) { $ScanCredential } else { Get-VisioScanCredential }
+    $auditArgs = @(
+        "-OutputPath", $OutputPath,
+        "-ComputerPrefix", $ComputerPrefix,
+        "-ThreadCount", $Threads
+    )
+    if ($credential) {
+        $auditArgs += "-ScanCredential"
+        $auditArgs += $credential
+    }
+
+    & "$scriptPath\visio-enterprise-audit.ps1" @auditArgs
 
     Write-Host "[+] Audit complete! Check $OutputPath for reports." -ForegroundColor Green
+}
+
+function Invoke-UsageAnalytics {
+    param(
+        [PSCredential]$ScanCredential
+    )
+
+    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    Write-Host "`n[*] Starting usage analytics..." -ForegroundColor Cyan
+    $credential = if ($ScanCredential) { $ScanCredential } else { Get-VisioScanCredential }
+    $analyticsArgs = @()
+    if ($credential) {
+        $analyticsArgs += "-ScanCredential"
+        $analyticsArgs += $credential
+    }
+
+    & "$scriptPath\visio-Usage-analytics.ps1" @analyticsArgs
+    Write-Host "[+] Usage analytics complete." -ForegroundColor Green
+}
+
+function Show-AccessErrorGuidance {
+    Write-Host "`n[*] Access Denied (CIM 397) Guidance" -ForegroundColor Cyan
+    Write-Host "CIM 397 indicates the audit host could not establish CIM/WMI communication." -ForegroundColor Yellow
+    Write-Host "Best options to work around it:" -ForegroundColor Green
+    Write-Host "  1. Re-run the audit with -ScanCredential (local administrator) so CIM runs under elevated context." -ForegroundColor White
+    Write-Host "  2. Enable WinRM/remote registry on the target hosts or make sure the firewall allows DCOM/CIM traffic." -ForegroundColor White
+    Write-Host "  3. When remoting is blocked, deploy the Visio scripts locally (scheduling or remote execution tools) and centralize results later." -ForegroundColor White
+    Write-Host "  4. Run Office-Version-Detector locally to prove the version and then rerun the audit with valid credentials." -ForegroundColor White
+    Write-Host ""
 }
 
 function Find-UnusedVisio {
@@ -458,8 +520,7 @@ function Start-InteractiveMenu {
                 Invoke-FullAudit -ComputerPrefix $prefix
             }
             "2" {
-                Write-Host "`nStarting usage analytics..." -ForegroundColor Cyan
-                & "$PSScriptRoot\visio-Usage-analytics.ps1"
+                Invoke-UsageAnalytics
             }
             "3" {
                 $months = Read-Host "Months inactive (default: 6)"
@@ -534,6 +595,10 @@ function Start-InteractiveMenu {
             "12" {
                 Write-Host "`nExiting..." -ForegroundColor Yellow
                 exit
+            }
+            "13" {
+                Show-AccessErrorGuidance
+                Pause
             }
             default {
                 Write-Host "Invalid selection" -ForegroundColor Red

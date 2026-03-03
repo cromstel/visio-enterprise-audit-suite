@@ -37,7 +37,13 @@ param(
     [string]$SearchBase,
 
     [Parameter(Mandatory = $false)]
-    [string[]]$ComputerNames = @()
+    [string[]]$ComputerNames = @(),
+
+    [Parameter(Mandatory = $false)]
+    [int]$UsageDaysBack = 90,
+
+    [Parameter(Mandatory = $false)]
+    [PSCredential]$ScanCredential
 )
 
 # ============================================================================
@@ -61,6 +67,193 @@ if ([string]::IsNullOrEmpty($OutputPath)) {
 # Set default SearchBase if not provided
 if ([string]::IsNullOrEmpty($SearchBase)) {
     $SearchBase = "OU=Workstations,OU=NEOS CIB 64,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra"
+}
+
+[PSCredential]$script:UsageScanCredential = $ScanCredential
+[int]$script:UsageFallbackWindow = $UsageDaysBack
+
+# Fallback helper scripts for credential-limited hosts
+$VisioUsageFallbackScript = {
+    param($DaysBack)
+
+    $cutoffDate = (Get-Date).AddDays(-$DaysBack)
+    $usage = [ordered]@{
+        ProcessRunning        = $false
+        ActiveUser            = $null
+        RecentDocuments       = @()
+        VisioTempFiles        = @()
+        FileAssociations      = @()
+        LicenseStatus         = "Unknown"
+        LastUserRun           = $null
+        RunCount              = 0
+        EstimatedUsageHours   = 0
+        Error                 = $null
+    }
+
+    try {
+        $visioProcesses = Get-Process -Name VISIO -ErrorAction SilentlyContinue
+        if ($visioProcesses) {
+            $usage.ProcessRunning = $true
+            foreach ($proc in $visioProcesses) {
+                $owner = Get-WmiObject -Class Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction SilentlyContinue
+                if ($owner) {
+                    $ownerInfo = $owner.GetOwner()
+                    if ($ownerInfo.ReturnValue -eq 0) {
+                        $usage.ActiveUser = "$($ownerInfo.Domain)\$($ownerInfo.User)"
+                        break
+                    }
+                }
+            }
+        }
+
+        $docPaths = Get-ChildItem -Path "C:\Users\*\Documents\*.vsd*" -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -gt $cutoffDate }
+        if ($docPaths) {
+            $usage.RecentDocuments = $docPaths | Select-Object -Property FullName, LastWriteTime -First 10
+            $usage.RunCount = $docPaths.Count
+        }
+
+        $tempFiles = Get-ChildItem -Path "C:\Users\*\AppData\Local\Microsoft\Office\16.0\*" -Recurse -Filter "*Visio*" -ErrorAction SilentlyContinue
+        if ($tempFiles) {
+            $usage.VisioTempFiles = $tempFiles | Select-Object -Property FullName, LastAccessTime
+        }
+
+        $assocPatterns = @("*.vsd", "*.vsdx", "*.vsdm")
+        foreach ($pattern in $assocPatterns) {
+            $matches = Get-ChildItem -Path "C:\Users\*\Documents\*$pattern" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 3
+            if ($matches) {
+                $usage.FileAssociations += $matches | Select-Object -Property FullName, Extension
+            }
+        }
+
+        if (Test-Path "HKLM:\Software\Microsoft\Office\ClickToRun\Configuration") {
+            $config = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Office\ClickToRun\Configuration" -ErrorAction SilentlyContinue
+            if ($config.Status) {
+                $usage.LicenseStatus = $config.Status
+            }
+            if ($config.LastUser) {
+                $usage.LastUserRun = $config.LastUser
+            }
+        }
+    }
+    catch {
+        $usage.Error = "Fallback usage analysis failed: $_"
+    }
+
+    return [pscustomobject]$usage
+}
+
+$VisioLicenseFallbackScript = {
+    $licenseInfo = [ordered]@{
+        IsLicensed       = $false
+        LicenseStatus    = "Unknown"
+        SubscriptionType = $null
+        LastActivation   = $null
+        Error            = $null
+    }
+
+    $licensePaths = @(
+        "HKLM:\Software\Microsoft\Office\16.0\Common\Identity\Licenses",
+        "HKLM:\Software\Microsoft\Office\ClickToRun\Licensing"
+    )
+
+    foreach ($path in $licensePaths) {
+        if (Test-Path $path) {
+            $keys = Get-ChildItem -Path $path -ErrorAction SilentlyContinue
+            foreach ($key in $keys) {
+                $props = Get-ItemProperty -Path $key.PSPath -ErrorAction SilentlyContinue
+                if ($props) {
+                    if ($props.Status) {
+                        $licenseInfo.IsLicensed = $true
+                        $licenseInfo.LicenseStatus = $props.Status
+                    }
+                    if ($props.SubscriptionType) {
+                        $licenseInfo.SubscriptionType = $props.SubscriptionType
+                    }
+                    if ($props.LastActivation) {
+                        $licenseInfo.LastActivation = $props.LastActivation
+                    }
+                    break
+                }
+            }
+            if ($licenseInfo.IsLicensed) { break }
+        }
+    }
+
+    return [pscustomobject]$licenseInfo
+}
+
+$VisioConfigFallbackScript = {
+    $config = [ordered]@{
+        StartupLocation     = $null
+        AutoRecoveryEnabled = $false
+        AutoRecoveryInterval= $null
+        DefaultFileFormat   = $null
+        RecentFilesCount    = 0
+        AddInsInstalled     = @()
+        Error               = $null
+    }
+
+    try {
+        $optionsPath = "HKCU:\Software\Microsoft\Office\16.0\Visio\Options"
+        if (Test-Path $optionsPath) {
+            $options = Get-ItemProperty -Path $optionsPath -ErrorAction SilentlyContinue
+            if ($options) {
+                $config.AutoRecoveryEnabled = [bool]$options.AutoRecovery
+                $config.AutoRecoveryInterval = $options.AutoRecoveryInterval
+                $config.DefaultFileFormat = $options.DefaultSaveFormat
+            }
+        }
+
+        $addinPath = "HKCU:\Software\Microsoft\Office\16.0\Visio\Resiliency"
+        if (Test-Path $addinPath) {
+            $addinKey = Get-Item -Path $addinPath -ErrorAction SilentlyContinue
+            if ($addinKey) {
+                $config.AddInsInstalled = $addinKey.GetSubKeyNames()
+            }
+        }
+    }
+    catch {
+        $config.Error = "Fallback configuration read failed: $_"
+    }
+
+    return [pscustomobject]$config
+}
+
+function New-UsageCimSession {
+    param([string]$ComputerName)
+
+    $sessionParams = @{
+        ComputerName = $ComputerName
+        ErrorAction  = "Stop"
+    }
+    if ($script:UsageScanCredential) {
+        $sessionParams.Credential = $script:UsageScanCredential
+    }
+
+    return New-CimSession @sessionParams
+}
+
+function Invoke-UsageFallbackCommand {
+    param(
+        [string]$ComputerName,
+        [scriptblock]$ScriptBlock,
+        $ArgumentList = @()
+    )
+
+    $invokeParams = @{
+        ComputerName = $ComputerName
+        ScriptBlock  = $ScriptBlock
+        ErrorAction  = "SilentlyContinue"
+    }
+    if ($script:UsageScanCredential) {
+        $invokeParams.Credential = $script:UsageScanCredential
+    }
+    if ($ArgumentList -and $ArgumentList.Count -gt 0) {
+        $invokeParams.ArgumentList = $ArgumentList
+    }
+
+    return Invoke-Command @invokeParams
 }
 
 # ============================================================================
@@ -121,7 +314,8 @@ function Get-DomainComputers {
 
 function Get-DetailedVisioUsage {
     param(
-        [string]$ComputerName
+        [string]$ComputerName,
+        [int]$DaysBack = $script:UsageFallbackWindow
     )
 
     $usage = @{
@@ -147,7 +341,7 @@ function Get-DetailedVisioUsage {
     $usage.IsOnline = $true
 
     try {
-        $session = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
+        $session = New-UsageCimSession -ComputerName $ComputerName
 
         # Check if Visio is currently running
         $visioProcess = Get-CimInstance -CimSession $session `
@@ -201,10 +395,32 @@ function Get-DetailedVisioUsage {
         # Registry path for Office 365 license information
         # Software\Microsoft\Office\16.0\Common\Identity
 
-        Remove-CimSession $session
+        if ($session) {
+            Remove-CimSession $session
+        }
     }
     catch {
-        $usage.Error = "Analysis failed: $_"
+        $usage.Error = "Usage analysis failed (CIM fallback will run): $_"
+        Write-Host "[WARN] Access denied (CIM 397) on $ComputerName - running local fallback script" -ForegroundColor Yellow
+        $fallbackResult = Invoke-UsageFallbackCommand -ComputerName $ComputerName -ScriptBlock $VisioUsageFallbackScript -ArgumentList $DaysBack
+        if ($fallbackResult -is [System.Collections.IEnumerable]) {
+            $fallbackResult = $fallbackResult | Select-Object -First 1
+        }
+
+        if ($fallbackResult) {
+            $usage.ProcessRunning = $fallbackResult.ProcessRunning
+            $usage.ActiveUser = $fallbackResult.ActiveUser
+            $usage.RecentDocuments = $fallbackResult.RecentDocuments
+            $usage.VisioTempFiles = $fallbackResult.VisioTempFiles
+            $usage.FileAssociations = $fallbackResult.FileAssociations
+            $usage.LicenseStatus = $fallbackResult.LicenseStatus
+            $usage.LastUserRun = $fallbackResult.LastUserRun
+            $usage.RunCount = $fallbackResult.RunCount
+            $usage.EstimatedUsageHours = $fallbackResult.EstimatedUsageHours
+            if ($fallbackResult.Error) {
+                $usage.Error = "Usage fallback warning: $($fallbackResult.Error)"
+            }
+        }
     }
 
     return $usage
@@ -256,6 +472,7 @@ function Get-Office365LicenseStatus {
         Error            = $null
     }
 
+    $regKey = $null
     try {
         $regKey = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey(
             [Microsoft.Win32.RegistryHive]::LocalMachine,
@@ -280,7 +497,20 @@ function Get-Office365LicenseStatus {
         }
     }
     catch {
-        $licenseInfo.Error = "Cannot access license information"
+        $licenseInfo.Error = "Cannot access license information: $_"
+        $fallbackResult = Invoke-UsageFallbackCommand -ComputerName $ComputerName -ScriptBlock $VisioLicenseFallbackScript
+        if ($fallbackResult -is [System.Collections.IEnumerable]) {
+            $fallbackResult = $fallbackResult | Select-Object -First 1
+        }
+        if ($fallbackResult) {
+            $licenseInfo.IsLicensed = $fallbackResult.IsLicensed
+            $licenseInfo.LicenseStatus = $fallbackResult.LicenseStatus
+            $licenseInfo.SubscriptionType = $fallbackResult.SubscriptionType
+            $licenseInfo.LastActivation = $fallbackResult.LastActivation
+            if ($fallbackResult.Error) {
+                $licenseInfo.Error = "License fallback warning: $($fallbackResult.Error)"
+            }
+        }
     }
 
     return $licenseInfo
@@ -534,9 +764,9 @@ function Main {
 
     foreach ($computer in $ComputerNames) {
         Write-Host "[*] Analyzing $computer..." -ForegroundColor Yellow
-        
-        $usage = Get-DetailedVisioUsage -ComputerName $computer
-        $documents = Measure-VisioDocuments -ComputerName $computer
+       
+        $usage = Get-DetailedVisioUsage -ComputerName $computer -DaysBack $UsageDaysBack
+        $documents = Measure-VisioDocuments -ComputerName $computer -DaysBack $UsageDaysBack
         $license = Get-Office365LicenseStatus -ComputerName $computer
         $config = Get-VisioConfiguration -ComputerName $computer
 
