@@ -428,3 +428,5 @@ That's it! Enjoy comprehensive Visio auditing! 🚀
 ---
 
 **Need help?** See `documentation/VISIO_AUDIT_GUIDE.md` for detailed documentation.
+
+Note: Office-Version-Detector now recognizes Microsoft 365 10.0.60910 (2408) Visio builds as supported Professional installs so the suite matches the audit logic.

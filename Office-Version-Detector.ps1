@@ -80,7 +80,7 @@ param(
 [string]$script:RegistryPathWow6432 = "SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration"
 
 # Supported Office version identifiers
-[string[]]$script:Office365Identifiers = @("O365", "Microsoft 365", "365")
+[string[]]$script:Office365Identifiers = @("O365", "Microsoft 365 Apps", "Microsoft 365", "365")
 [string[]]$script:Office2019Identifiers = @("2019")
 
 #endregion
@@ -449,9 +449,9 @@ function Test-OfficeVersionValidation {
     }
     
     try {
-        # Check if version starts with 16.0 (Office 2016/2019/365 family)
-        if ($Version -notmatch '^16\.0\.') {
-            Write-LogMessage -Message "Version $Version is not in Office 2016+ family (must start with 16.0)" -Level WARNING -FunctionName "Test-OfficeVersionValidation"
+        # Accept Office 2016+ (16.*) and Microsoft 365 10.* releases
+        if ($Version -notmatch '^(16\.0\.|10\.0\.)') {
+            Write-LogMessage -Message "Version $Version is not in the supported release families (must start with 16.0 or 10.0)" -Level WARNING -FunctionName "Test-OfficeVersionValidation"
             return $result
         }
         

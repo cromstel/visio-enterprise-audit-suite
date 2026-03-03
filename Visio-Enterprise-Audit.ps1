@@ -341,22 +341,27 @@ function Get-VisioInstallationInfo {
             elseif ($visioProduct.Name -match "Standard") {
                 $result.VisioEdition = "Standard"
             }
-            else {
-                # Try to detect from version number
-                $versionParts = $visioProduct.Version.Split('.')
-                if ($versionParts.Count -ge 2) {
-                    $majorVersion = [int]$versionParts[0]
-                    $buildNumber = if ($versionParts.Count -ge 2) { [int]$versionParts[1] } else { 0 }
-                    
-                    # Office 365/2021 builds typically higher
-                    if ($buildNumber -ge 13000) {
-                        $result.VisioEdition = "Professional"  # Default for 2021
+                    else {
+                        # Try to detect from version number, including 10.0.60910 builds
+                        $versionParts = $visioProduct.Version.Split('.')
+                        $majorVersion = 0
+                        $buildNumber = 0
+                        $revisionNumber = 0
+
+                        if ($versionParts.Count -ge 1) {
+                            [int]::TryParse($versionParts[0], [ref]$majorVersion) | Out-Null
+                        }
+                        if ($versionParts.Count -ge 2) {
+                            [int]::TryParse($versionParts[1], [ref]$buildNumber) | Out-Null
+                        }
+                        if ($versionParts.Count -ge 3) {
+                            [int]::TryParse($versionParts[2], [ref]$revisionNumber) | Out-Null
+                        }
+
+                        if ($revisionNumber -ge 13000 -or $buildNumber -ge 13000 -or $majorVersion -ge 16 -or $majorVersion -eq 10) {
+                            $result.VisioEdition = "Professional"
+                        }
                     }
-                    elseif ($majorVersion -eq 16) {
-                        $result.VisioEdition = "Professional"  # Assume Professional for 2016/2019
-                    }
-                }
-            }
         }
 
         # Last-use source 1: live process means Visio is in use now.
@@ -501,7 +506,7 @@ function Invoke-VisioScan {
 
     foreach ($computer in $Computers) {
         $scriptBlock = {
-            param($ComputerName, $VisioPaths, $RegistryPaths, $ScanCredential, $FallbackScript)
+            param($ComputerName, $VisioPaths, $RegistryPaths, [PSCredential]$ScanCredential, $FallbackScript)
             
             # Inline function logic for runspace scope compatibility
             $result = @{
@@ -579,19 +584,25 @@ function Invoke-VisioScan {
                         $result.VisioEdition = "Standard"
                     }
                     else {
-                        # Try to detect from version number
+                        # Try to detect from version number (supports new 10.0.60910 numbering)
                         $versionParts = $visioProduct.Version.Split('.')
+                        $majorVersion = 0
+                        $buildNumber = 0
+                        $revisionNumber = 0
+
+                        if ($versionParts.Count -ge 1) {
+                            [int]::TryParse($versionParts[0], [ref]$majorVersion) | Out-Null
+                        }
                         if ($versionParts.Count -ge 2) {
-                            $majorVersion = [int]$versionParts[0]
-                            $buildNumber = if ($versionParts.Count -ge 2) { [int]$versionParts[1] } else { 0 }
-                            
-                            # Office 365/2021 builds typically higher
-                            if ($buildNumber -ge 13000) {
-                                $result.VisioEdition = "Professional"  # Default for 2021
-                            }
-                            elseif ($majorVersion -eq 16) {
-                                $result.VisioEdition = "Professional"  # Assume Professional for 2016/2019
-                            }
+                            [int]::TryParse($versionParts[1], [ref]$buildNumber) | Out-Null
+                        }
+                        if ($versionParts.Count -ge 3) {
+                            [int]::TryParse($versionParts[2], [ref]$revisionNumber) | Out-Null
+                        }
+
+                        # Office 365/2021+ and the new 10.0.60910 builds should be treated as Professional
+                        if ($revisionNumber -ge 13000 -or $buildNumber -ge 13000 -or $majorVersion -ge 16 -or $majorVersion -eq 10) {
+                            $result.VisioEdition = "Professional"
                         }
                     }
                 }
