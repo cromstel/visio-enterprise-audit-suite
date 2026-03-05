@@ -254,6 +254,9 @@ Recommended weekly workflow:
 ### Access denied errors
 - Run elevated PowerShell.
 - Validate endpoint admin rights and remote management permissions.
+- Supply a local admin credential via `-ScanCredential` or use `Visio-Helper-Utils.ps1` option 15/13 to cache the credential and review the Access 397 guidance before rerunning the audit.
+- Run `Office-Version-Detector.ps1` on an impacted host to confirm Microsoft 365 Apps 10.0.60910 or Visio 2016 (Standard/Professional) installs via MSI/uninstall keys (this script no longer relies on Click-to-Run registry paths).
+- Expect Access 397 hosts to fall back to the remote helper script, which now collects `VisioVersion` and `VisioEdition` metadata so the CSV still reports Professional/Standard installs even when CIM/WMI is blocked.
 
 ## 13. Performance and Safety Recommendations
 
@@ -274,3 +277,4 @@ This guide reflects current repository behavior including:
 - Professional ASCII-safe scan interface
 - `CurrentUser` tracking
 - `LastUsageSource` tracking with source precedence
+- MSI/uninstall based detection for Microsoft 365 Apps 10.0.60910 and Visio 2016 Professional/Standard (Click-to-Run keys are not read).

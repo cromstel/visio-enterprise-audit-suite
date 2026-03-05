@@ -64,9 +64,26 @@
 
 ---
 
+## [1.1] - 2026-03-05
+
+### 🔧 Added
+- Access 397 helper guidance now directs operators to the local admin credential workflow, WinRM/DCOM checks, and `Office-Version-Detector.ps1`, which detects Microsoft 365 Apps 10.0.60910 plus Visio 2016 Professional/Standard without relying on Click-to-Run keys.
+- The remote fallback helper now captures `VisioVersion` and `VisioEdition` metadata so Standard/Professional 2016 installs continue to report in the CSV even when CIM/WMI is blocked.
+- Docs, README, and guides document the Access 397 workflow plus the supported Visio/Office versions.
+
+### 🔄 Changed
+- `Visio-Enterprise-Audit.ps1` warns about Access 397, references helper option 13, and logs 10.0.60910 version detection while preserving the fallback summary.
+- `Visio-Helper-Utils.ps1` removes the duplicate report block, refreshes Access 397 guidance, and highlights the new version verification steps.
+- `Office-Version-Detector.ps1` emphasizes MSI/uninstall detection, includes logs for Visio 2016/2021 builds, and no longer references Click-to-Run registry paths.
+
+### ✅ Fixed
+- Removed the stray report block from `Visio-Helper-Utils.ps1` that caused a parsing error.
+
+---
+
 ## Planned Features (Future Versions)
 
-### [1.1] - Coming Soon
+### [1.2] - Coming Soon
 - [ ] PowerShell Remoting as alternative to WMI
 - [ ] Database support (SQL Server integration)
 - [ ] Web dashboard for report viewing
@@ -76,7 +93,7 @@
 - [ ] Document usage analytics
 - [ ] Auto-remediation features
 
-### [1.2] - Q2 2026
+### [1.3] - Q2 2026
 - [ ] Multi-domain support
 - [ ] Forest-wide scanning
 - [ ] Active Directory extensibility

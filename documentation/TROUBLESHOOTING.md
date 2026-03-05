@@ -94,6 +94,11 @@ Get-CimInstance -CimSession $s -ClassName Win32_OperatingSystem
 Remove-CimSession $s
 ```
 
+Additional guidance:
+- Access Denied (CIM 397) occurs when WMI/DCOM is blocked; the audit then falls back to the remote helper, but supplying `-ScanCredential <local admin>` (or using `Visio-Helper-Utils.ps1` option 13) ensures CIM/WinRM runs under an elevated context.
+- Run `Office-Version-Detector.ps1` directly on the problematic host to confirm that Microsoft 365 Apps build 10.0.60910 or Visio 2016 Professional/Standard is installed via MSI/uninstall keys before rerunning the suite.
+- Enabling `LocalAccountTokenFilterPolicy`, opening the Windows Management Instrumentation firewall rule, and confirming PSRemoting (shown in the README sample) are the core remediation steps for Access 397.
+
 ## Performance Issues
 
 Symptoms:
@@ -166,4 +171,3 @@ If unresolved:
 - `documentation/USER_GUIDE.md`
 - `documentation/VISIO_AUDIT_GUIDE.md`
 - `documentation/DEPLOYMENT.md`
-

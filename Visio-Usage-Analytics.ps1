@@ -13,6 +13,7 @@
     - Recent Visio documents
     - File association metadata
     - License information for Office 365
+    - Support for Microsoft 365 Apps / Visio 2021 builds (10.0.60910) and Visio 2016 Standard/Professional via CIM fallback when Access Denied (CIM 397)
 #>
 
 param(

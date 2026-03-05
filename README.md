@@ -167,6 +167,8 @@ Enable-NetFirewallRule -DisplayGroup "Windows Management Instrumentation (WMI)"
 Enable-PSRemoting -Force          # ensures WinRM listens on the targets
 ```
 
+Access error 397 indicates CIM/WMI communication is blocked; run `Visio-Helper-Utils.ps1` option 13 for the detailed remediation steps (credential caching, firewall rules, and helper guidance) and use `Office-Version-Detector.ps1` locally to confirm Microsoft 365 Apps 10.0.60910 plus Visio 2016 Professional/Standard installs before rerunning the audit.
+
 Enabling `LocalAccountTokenFilterPolicy` stops Windows from stripping the remote token from the local account, while the firewall rule and PSRemoting ensure `Invoke-Command` can connect. Run these commands per host or push via Group Policy before the audit.
 
 ---
@@ -203,6 +205,7 @@ Reports automatically generated in the script's Output\VisioAudit directory:
 ✓ Installation paths  
 ✓ Online/offline status  
 ✓ Office 365 subscription detection  
+✓ Microsoft 365 Apps 10.0.60910 plus Visio 2016 Professional/Standard via MSI/uninstall detection  
 
 ---
 

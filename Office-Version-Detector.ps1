@@ -9,7 +9,8 @@
     older versions (Office 2013, 2010, etc.).
 
     The script supports:
-    - Office 365/Microsoft 365 and Office 2016/2019 detection via MSI
+    - Office 365/Microsoft 365 and Office 2016/2019 detection via MSI/uninstall registry entries
+    - Microsoft 365 Apps build 10.0.60910 plus Visio 2016 Professional and Standard installations
     - Both 32-bit and 64-bit system detection
     - Detailed logging to console and file
 
@@ -271,7 +272,12 @@ function Test-RegistryKey {
 <#
 .SYNOPSIS
     Detects Office installation using MSI registry keys.
- 
+
+.DESCRIPTION
+    Reliably inspects MSI configuration and Uninstall registry entries instead of Click-to-Run
+    keys so that Microsoft 365 Apps builds such as 10.0.60910 and Visio 2016 Professional/Standard
+    installations are detected by the suite even when Click-to-Run configuration keys are absent.
+#>
 function Test-MSIInstallation {
     [CmdletBinding()]
     param()
@@ -423,7 +429,7 @@ function Test-OfficeVersionValidation {
         if ($Version -match '^10\.0\.\d+') {
             $result.IsSupported = $true
             $result.OfficeType = "Office 365"
-            Write-LogMessage -Message "Version $Version (10.0.*) treated as Microsoft 365 Apps (10.0.60910 support)" -Level INFO -FunctionName "Test-OfficeVersionValidation"
+        Write-LogMessage -Message "Version $Version (10.0.*) treated as Microsoft 365 Apps/Visio 2021 (build 10.0.60910) and marked as supported" -Level INFO -FunctionName "Test-OfficeVersionValidation"
             return $result
         }
 

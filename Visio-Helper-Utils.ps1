@@ -108,6 +108,11 @@ function Get-VisioScanCredential {
     return $script:VisioScanCredential
 }
 
+function Get-DefaultOutputPath {
+    $base = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    return Join-Path $base "Output\VisioAudit"
+}
+
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
@@ -288,6 +293,50 @@ function Send-ReportNotification {
         return
     }
 
+    $csvData = Import-Csv -Path $files.Csv -ErrorAction SilentlyContinue
+    $total = $csvData.Count
+    $visioInstalls = ($csvData | Where-Object { $_.VisioInstalled -eq "Yes" }).Count
+    $withVisioOffline = ($csvData | Where-Object { $_.VisioInstalled -eq "Yes" -and $_.IsOnline -eq "No" }).Count
+    $errors = ($csvData | Where-Object { $_.Error -and $_.Error -ne "None" }).Count
+
+    $body = @"
+<p>Visio audit report generated on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
+<ul>
+  <li>Total computers scanned: $total</li>
+  <li>Visio installations: $visioInstalls</li>
+  <li>Visio offline counts: $withVisioOffline</li>
+  <li>Access errors: $errors</li>
+</ul>
+<p>HTML report attached: $(Split-Path $files.Html -Leaf)</p>
+"@
+
+    $attachments = @()
+    if ($IncludeAttachments) {
+        if ($UseZip) {
+            $zipPath = Join-Path $env:TEMP "VisioAuditReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
+            Compress-Archive -Path @($files.Csv, $files.Html) -DestinationPath $zipPath -Force
+            $attachments += $zipPath
+        }
+        else {
+            $attachments += $files.Html
+            $attachments += $files.Csv
+        }
+    }
+
+    if ($Recipients) {
+        Send-ReportEmail -Recipients $Recipients -SmtpServer $SmtpServer -Subject $Subject -Body $body -Attachments $attachments
+    }
+    elseif (-not $WebhookUrl) {
+        Write-Host "[-] No recipients or webhook defined; no notification sent" -ForegroundColor Yellow
+    }
+
+    if ($WebhookUrl) {
+        $summary = "Total: $total | Visio: $visioInstalls | Offline: $withVisioOffline | Errors: $errors"
+        Invoke-ReportWebhook -WebhookUrl $WebhookUrl -Summary $summary -Title $Subject
+    }
+
+}
+
 function Cleanup-OldReports {
     param(
         [int]$DaysToKeep = 30,
@@ -407,7 +456,7 @@ function Invoke-VisioHealthCheck {
     foreach ($key in $status.Keys) {
         $value = $status[$key]
         $color = if ($value -like "PASS*") { "Green" } elseif ($value -like "WARN*") { "Yellow" } else { "Red" }
-        Write-Host "$key: $value" -ForegroundColor $color
+        Write-Host ("{0}: {1}" -f $key, $value) -ForegroundColor $color
     }
 
     $dashboardPath = Join-Path $ReportPath "VisioHealthStatus.html"
@@ -429,50 +478,6 @@ $($rows -join "`n")
 
     $html | Out-File -FilePath $dashboardPath -Encoding UTF8
     Write-Host "[+] Health dashboard saved: $dashboardPath" -ForegroundColor Green
-}
-
-    $csvData = Import-Csv -Path $files.Csv -ErrorAction SilentlyContinue
-    $total = $csvData.Count
-    $visioInstalls = ($csvData | Where-Object { $_.VisioInstalled -eq "Yes" }).Count
-    $withVisioOffline = ($csvData | Where-Object { $_.VisioInstalled -eq "Yes" -and $_.IsOnline -eq "No" }).Count
-    $errors = ($csvData | Where-Object { $_.Error -and $_.Error -ne "None" }).Count
-
-    $body = @"
-<p>Visio audit report generated on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
-<ul>
-  <li>Total computers scanned: $total</li>
-  <li>Visio installations: $visioInstalls</li>
-  <li>Visio offline counts: $withVisioOffline</li>
-  <li>Access errors: $errors</li>
-</ul>
-<p>HTML report attached: $(Split-Path $files.Html -Leaf)</p>
-</ul>
-"@
-
-    $attachments = @()
-    if ($IncludeAttachments) {
-        if ($UseZip) {
-            $zipPath = Join-Path $env:TEMP "VisioAuditReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
-            Compress-Archive -Path @($files.Csv, $files.Html) -DestinationPath $zipPath -Force
-            $attachments += $zipPath
-        }
-        else {
-            $attachments += $files.Html
-            $attachments += $files.Csv
-        }
-    }
-
-    if ($Recipients) {
-        Send-ReportEmail -Recipients $Recipients -SmtpServer $SmtpServer -Subject $Subject -Body $body -Attachments $attachments
-    }
-    elseif (-not $WebhookUrl) {
-        Write-Host "[-] No recipients or webhook defined; no notification sent" -ForegroundColor Yellow
-    }
-
-    if ($WebhookUrl) {
-        $summary = "Total: $total | Visio: $visioInstalls | Offline: $withVisioOffline | Errors: $errors"
-        Invoke-ReportWebhook -WebhookUrl $WebhookUrl -Summary $summary -Title $Subject
-    }
 }
 
 function New-ScheduledAudit {
@@ -572,7 +577,7 @@ function Show-AccessErrorGuidance {
     Write-Host "  1. Re-run the audit with -ScanCredential (local administrator) so CIM runs under elevated context." -ForegroundColor White
     Write-Host "  2. Enable WinRM/remote registry on the target hosts or make sure the firewall allows DCOM/CIM traffic." -ForegroundColor White
     Write-Host "  3. When remoting is blocked, deploy the Visio scripts locally (scheduling or remote execution tools) and centralize results later." -ForegroundColor White
-    Write-Host "  4. Run Office-Version-Detector locally to prove the version and then rerun the audit with valid credentials." -ForegroundColor White
+    Write-Host "  4. Run Office-Version-Detector locally to prove the 10.0.60910/Visio 2016 Standard or Professional install and then rerun the audit with valid credentials." -ForegroundColor White
     Write-Host ""
 }
 
@@ -998,7 +1003,7 @@ function Start-InteractiveMenu {
                 Write-Host "`n[*] Prepare report notification" -ForegroundColor Cyan
                 $reportPath = Read-Host "Report folder (default: Output\VisioAudit)"
                 if ([string]::IsNullOrEmpty($reportPath)) {
-                    $reportPath = "$((if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }))\Output\VisioAudit"
+                    $reportPath = Get-DefaultOutputPath
                 }
                 $recipients = Read-Host "Email recipients (comma-separated, leave blank to skip)"
                 $smtpServer = Read-Host "SMTP server (default: smtp.company.com)"
@@ -1093,7 +1098,7 @@ function Start-InteractiveMenu {
             "16" {
                 $reportPath = Read-Host "Report folder (default Output\\VisioAudit)"
                 if ([string]::IsNullOrEmpty($reportPath)) {
-                    $reportPath = "$((if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }))\Output\VisioAudit"
+                    $reportPath = Get-DefaultOutputPath
                 }
                 $days = Read-Host "Keep reports for how many days? (default 30)"
                 [int]$parsedDays = 30
@@ -1112,7 +1117,7 @@ function Start-InteractiveMenu {
                 if (-not [int]::TryParse($sampleCount, [ref]$parsedSample)) { $parsedSample = 3 }
                 $reportPath = Read-Host "Report folder for health check (default Output\\VisioAudit)"
                 if ([string]::IsNullOrEmpty($reportPath)) {
-                    $reportPath = "$((if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }))\Output\VisioAudit"
+                    $reportPath = Get-DefaultOutputPath
                 }
                 Invoke-VisioHealthCheck -TaskName $taskName -ReportPath $reportPath -SampleCount $parsedSample
                 Pause

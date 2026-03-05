@@ -109,6 +109,8 @@ $RemoteVisioFallbackScript = {
         LastUsageSource   = $null
         Office365Install  = $false
         OfficeVersion     = $null
+        VisioVersion      = $null
+        VisioEdition      = $null
     }
 
     foreach ($path in $Paths) {
@@ -120,6 +122,25 @@ $RemoteVisioFallbackScript = {
                 $fallbackResult.LastAccessTime = $fileInfo.LastAccessTime
                 $fallbackResult.LastUsedDate = $fileInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")
                 $fallbackResult.LastUsageSource = "ExecutableLastAccess"
+                $exeVersion = $fileInfo.VersionInfo
+                if ($exeVersion) {
+                    if (-not $fallbackResult.OfficeVersion -and $exeVersion.ProductVersion) {
+                        $fallbackResult.OfficeVersion = $exeVersion.ProductVersion
+                    }
+                    if ($exeVersion.ProductVersion) {
+                        $fallbackResult.VisioVersion = $exeVersion.ProductVersion
+                    }
+                    $productName = $exeVersion.ProductName
+                    if ($productName -match "Professional") {
+                        $fallbackResult.VisioEdition = "Professional"
+                    }
+                    elseif ($productName -match "Standard") {
+                        $fallbackResult.VisioEdition = "Standard"
+                    }
+                    elseif ($productName -match "Visio") {
+                        $fallbackResult.VisioEdition = "Professional"
+                    }
+                }
                 break
             }
         }
@@ -708,6 +729,12 @@ function Invoke-VisioScan {
                     if ($fallbackResult.OfficeVersion) {
                         $result.OfficeVersion = $fallbackResult.OfficeVersion
                     }
+                    if ($fallbackResult.VisioVersion) {
+                        $result.VisioVersion = $fallbackResult.VisioVersion
+                    }
+                    if ($fallbackResult.VisioEdition) {
+                        $result.VisioEdition = $fallbackResult.VisioEdition
+                    }
                     if (-not $result.VisioVersion -and $fallbackResult.OfficeVersion) {
                         $result.VisioVersion = $fallbackResult.OfficeVersion
                     }
@@ -1221,8 +1248,8 @@ function Main {
     Write-UiLine ("  - Office 365          : {0}" -f $summary.Office365Installs) "Cyan"
     Write-UiLine ("Access Errors           : {0}" -f $summary.AccessErrors) "Red"
     if ($summary.Cim397Errors -gt 0) {
-        Write-UiWarn ("Detected {0} host(s) reporting Access Denied (CIM 397). Supply a local admin credential via -ScanCredential and ensure WinRM/DCOM is reachable from the audit host." -f $summary.Cim397Errors)
-        Write-UiInfo "When WinRM is blocked, the fallback script already inspects Visio files locally, but WinRM/remote registry access is the most reliable option."
+        Write-UiWarn ("Detected {0} host(s) reporting Access Denied (CIM 397). Supply a local admin credential via -ScanCredential (or run option 13 in Visio-Helper-Utils) and ensure WinRM/DCOM is reachable from the audit host." -f $summary.Cim397Errors)
+        Write-UiInfo "When WinRM is blocked, the fallback script still inspects Visio files locally; run Office-Version-Detector locally on a sample host to confirm 10.0.60910/2016 installs."
     }
     Write-UiLine ""
     Write-UiSuccess "Audit complete"
