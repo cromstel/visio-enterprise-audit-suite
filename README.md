@@ -357,7 +357,7 @@ Option 8 now bundles the latest audit CSV/HTML into email/webhook notifications,
 Option 15 caches the local admin credential in `VisioScanCredential.txt` in the script root, encrypted with DPAPI so only the current user can read it. Clear it via the same option if you need to rotate credentials or share the suite with another operator.
 
 ### Report Retention
-Option 16 runs `Cleanup-OldReports` and removes CSV/HTML pairs older than 30 days (default) or beyond a custom file count. Use it manually or schedule a reminder so the `Output\VisioAudit` folder stays under control.
+Option 16 runs `Remove-OldReports` and removes CSV/HTML pairs older than 30 days (default) or beyond a custom file count. Use it manually or schedule a reminder so the `Output\VisioAudit` folder stays under control.
 
 ### Health Check Dashboard
 Option 17 runs `Invoke-VisioHealthCheck`, validating AD connectivity, WinRM reachability, scheduled task health, and recent report availability, then writes `Output\VisioAudit\VisioHealthStatus.html` for a quick compliance snapshot.

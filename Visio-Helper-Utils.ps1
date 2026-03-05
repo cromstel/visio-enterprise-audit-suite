@@ -353,7 +353,7 @@ function Send-ReportNotification {
 
 }
 
-function Cleanup-OldReports {
+function Remove-OldReports {
     param(
         [int]$DaysToKeep = 30,
         [int]$MaxFiles = 0,
@@ -1336,7 +1336,7 @@ function Start-InteractiveMenu {
                 $maxFiles = Read-Host "Maximum files to keep (0 for no limit, default 0)"
                 [int]$parsedMax = 0
                 if (-not [int]::TryParse($maxFiles, [ref]$parsedMax)) { $parsedMax = 0 }
-                Cleanup-OldReports -ReportPath $reportPath -DaysToKeep $parsedDays -MaxFiles $parsedMax
+                Remove-OldReports -ReportPath $reportPath -DaysToKeep $parsedDays -MaxFiles $parsedMax
                 Pause
             }
             "17" {

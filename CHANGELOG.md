@@ -72,9 +72,9 @@
 - Docs, README, and guides document the Access 397 workflow plus the supported Visio/Office versions.
 - Added Access 397 remediation and JSON snapshot helpers (option 18/19 in `Visio-Helper-Utils.ps1`) so admins can toggle policy/firewall/PSRemoting and push audit summaries to webhook consumers.
 
-### 🔄 Changed
 - `Visio-Enterprise-Audit.ps1` warns about Access 397, references helper option 13, and logs 10.0.60910 version detection while preserving the fallback summary.
 - `Visio-Helper-Utils.ps1` removes the duplicate report block, refreshes Access 397 guidance, and highlights the new version verification steps.
+- `Visio-Helper-Utils.ps1` also renamed `Cleanup-OldReports` to `Remove-OldReports` while keeping the menu wiring intact.
 - `Office-Version-Detector.ps1` emphasizes MSI/uninstall detection, includes logs for Visio 2016/2021 builds, and no longer references Click-to-Run registry paths.
 
 ### ✅ Fixed
