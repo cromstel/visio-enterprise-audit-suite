@@ -113,6 +113,14 @@ function Get-DefaultOutputPath {
     return Join-Path $base "Output\VisioAudit"
 }
 
+function Get-SnapshotDirectory {
+    $snapshotsRoot = Join-Path (Get-DefaultOutputPath) "Snapshots"
+    if (-not (Test-Path $snapshotsRoot)) {
+        New-Item -ItemType Directory -Path $snapshotsRoot -Force | Out-Null
+    }
+    return $snapshotsRoot
+}
+
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
@@ -140,6 +148,8 @@ function Show-Menu {
     Write-Host "15. Clear Cached Credential" -ForegroundColor Yellow
     Write-Host "16. Cleanup Old Reports" -ForegroundColor Yellow
     Write-Host "17. Run Health Check" -ForegroundColor Yellow
+    Write-Host "18. Remediate Access 397 endpoints" -ForegroundColor Yellow
+    Write-Host "19. Export snapshot & push JSON" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -581,6 +591,220 @@ function Show-AccessErrorGuidance {
     Write-Host ""
 }
 
+function Invoke-Access397Remediation {
+    [CmdletBinding()]
+    param(
+        [string[]]$ComputerNames,
+        [string]$SearchBase,
+        [string]$ComputerPrefix = "GOT",
+        [PSCredential]$ScanCredential,
+        [bool]$ApplyLocalAccountTokenFilterPolicy = $true,
+        [bool]$EnableWmiFirewallRule = $true,
+        [bool]$EnsurePsRemoting = $true,
+        [string]$SaveReportPath
+    )
+
+    if (-not $ComputerNames -or $ComputerNames.Count -eq 0) {
+        $domainComputers = Get-DomainComputers -ComputerPrefix $ComputerPrefix -SearchBase $SearchBase
+        $ComputerNames = $domainComputers | Select-Object -ExpandProperty Name
+    }
+
+    if (-not $ComputerNames -or $ComputerNames.Count -eq 0) {
+        Write-Host "[-] No target computers found for remediation" -ForegroundColor Red
+        return
+    }
+
+    $remediationScript = {
+        param($applyToken, $enableFirewall, $ensureRemoting)
+        $jobStatus = [ordered]@{
+            ComputerName                   = $env:COMPUTERNAME
+            LocalAccountTokenFilterPolicy  = "Not run"
+            WmiFirewallStatus              = "Not run"
+            PsRemotingStatus               = "Not run"
+            WinRMServiceStatus             = $null
+            WsManConnectivity             = $null
+            Timestamp                      = (Get-Date).ToString("o")
+            Error                          = $null
+        }
+
+        try {
+            if ($applyToken) {
+                $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+                New-Item -Path $regPath -Force | Out-Null
+                New-ItemProperty -Path $regPath -Name "LocalAccountTokenFilterPolicy" -Value 1 -PropertyType DWord -Force | Out-Null
+                $jobStatus.LocalAccountTokenFilterPolicy = (Get-ItemProperty -Path $regPath -Name "LocalAccountTokenFilterPolicy" -ErrorAction Stop).LocalAccountTokenFilterPolicy
+            }
+        }
+        catch {
+            $jobStatus.LocalAccountTokenFilterPolicy = "Error: $($_.Exception.Message)"
+        }
+
+        try {
+            if ($enableFirewall) {
+                if (Get-Command -Name Set-NetFirewallRule -ErrorAction SilentlyContinue) {
+                    $rules = Get-NetFirewallRule -Group "Windows Management Instrumentation (WMI)" -ErrorAction SilentlyContinue
+                    if ($rules) {
+                        $rules | Set-NetFirewallRule -Enabled True -ErrorAction SilentlyContinue
+                        $jobStatus.WmiFirewallStatus = "Enabled"
+                    }
+                    else {
+                        $jobStatus.WmiFirewallStatus = "No rules found"
+                    }
+                }
+                else {
+                    Enable-NetFirewallRule -DisplayGroup "Windows Management Instrumentation (WMI)" -ErrorAction SilentlyContinue | Out-Null
+                    $jobStatus.WmiFirewallStatus = "Firewall group enabled"
+                }
+            }
+        }
+        catch {
+            $jobStatus.WmiFirewallStatus = "Error: $($_.Exception.Message)"
+        }
+
+        try {
+            if ($ensureRemoting) {
+                Enable-PSRemoting -Force -SkipNetworkProfileCheck -ErrorAction SilentlyContinue | Out-Null
+                $winRm = Get-Service -Name WinRM -ErrorAction SilentlyContinue
+                $jobStatus.WinRMServiceStatus = if ($winRm) { $winRm.Status } else { "Unavailable" }
+                $jobStatus.PsRemotingStatus = "Configured"
+            }
+        }
+        catch {
+            $jobStatus.PsRemotingStatus = "Error: $($_.Exception.Message)"
+        }
+
+        try {
+            Test-WSMan -ComputerName $env:COMPUTERNAME -ErrorAction Stop | Out-Null
+            $jobStatus.WsManConnectivity = "Self-check passed"
+        }
+        catch {
+            $jobStatus.WsManConnectivity = "Failed: $($_.Exception.Message)"
+        }
+
+        return $jobStatus
+    }
+
+    $results = @()
+    foreach ($computer in $ComputerNames) {
+        $status = [ordered]@{
+            ComputerName                  = $computer
+            LocalAccountTokenFilterPolicy = "Pending"
+            WmiFirewallStatus             = "Pending"
+            PsRemotingStatus              = "Pending"
+            WinRMServiceStatus            = "Pending"
+            WsManConnectivity            = "Pending"
+            Timestamp                     = (Get-Date).ToString("o")
+            Error                         = $null
+        }
+
+        if (-not (Test-Connection -ComputerName $computer -Count 1 -Quiet)) {
+            $status.Error = "Host offline or unreachable"
+            $results += [PSCustomObject]$status
+            continue
+        }
+
+        $invokeParams = @{
+            ComputerName = $computer
+            ScriptBlock  = $remediationScript
+            ArgumentList = @($ApplyLocalAccountTokenFilterPolicy, $EnableWmiFirewallRule, $EnsurePsRemoting)
+            ErrorAction  = "Stop"
+        }
+        if ($ScanCredential) {
+            $invokeParams.Credential = $ScanCredential
+        }
+
+        try {
+            $remoteResult = Invoke-Command @invokeParams
+            if ($remoteResult) {
+                $status = $remoteResult | Select-Object -First 1
+            }
+        }
+        catch {
+            $status.Error = $_.Exception.Message
+            $status.LocalAccountTokenFilterPolicy = "Failed"
+            $status.WmiFirewallStatus = "Failed"
+            $status.PsRemotingStatus = "Failed"
+            $status.WinRMServiceStatus = "Failed"
+            $status.WsManConnectivity = "Failed"
+        }
+
+        $results += [PSCustomObject]$status
+    }
+
+    $reportRoot = if ([string]::IsNullOrEmpty($SaveReportPath)) { Join-Path (Get-DefaultOutputPath) "RemediationReports" } else { $SaveReportPath }
+    if (-not (Test-Path $reportRoot)) {
+        New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
+    }
+    $outputFile = Join-Path $reportRoot "Access397Remediation_$(Get-Date -Format 'yyyyMMdd_HHmmss').json"
+    $results | ConvertTo-Json -Depth 5 | Out-File -FilePath $outputFile -Encoding UTF8
+    Write-Host "[+] Remediation report saved: $outputFile" -ForegroundColor Green
+
+    return $results
+}
+
+function Export-VisioAuditSnapshot {
+    [CmdletBinding()]
+    param(
+        [string]$ReportPath,
+        [string]$SnapshotDirectory,
+        [string]$WebhookUrl
+    )
+
+    if ([string]::IsNullOrEmpty($ReportPath)) {
+        $ReportPath = Get-DefaultOutputPath
+    }
+
+    $latestCsv = Get-ChildItem -Path $ReportPath -Filter "VisioAudit_*.csv" -ErrorAction SilentlyContinue |
+        Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
+    $latestHtml = Get-ChildItem -Path $ReportPath -Filter "VisioAudit_*.html" -ErrorAction SilentlyContinue |
+        Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
+
+    if (-not $latestCsv) {
+        Write-Host "[-] No CSV reports found in $ReportPath" -ForegroundColor Red
+        return
+    }
+
+    $data = Import-Csv -Path $latestCsv.FullName -ErrorAction SilentlyContinue
+    $summary = [ordered]@{
+        Timestamp           = (Get-Date).ToString("o")
+        CsvReport           = Split-Path $latestCsv.FullName -Leaf
+        HtmlReport          = if ($latestHtml) { Split-Path $latestHtml.FullName -Leaf } else { $null }
+        Totals              = [ordered]@{
+            TotalComputers     = $data.Count
+            VisioInstalled     = ($data | Where-Object { $_.VisioInstalled -eq "Yes" }).Count
+            VisioProfessional  = ($data | Where-Object { $_.VisioEdition -eq "Professional" }).Count
+            VisioStandard      = ($data | Where-Object { $_.VisioEdition -eq "Standard" }).Count
+            Office365Installs  = ($data | Where-Object { $_.Office365Install -eq "True" }).Count
+            OfflineComputers   = ($data | Where-Object { $_.IsOnline -eq "No" }).Count
+            AccessErrors       = ($data | Where-Object { $_.Error -and $_.Error -ne "None" }).Count
+            Cim397Errors       = ($data | Where-Object { $_.Error -match "CIM 397" }).Count
+        }
+        Samples             = $data | Select-Object -First 5 ComputerName, VisioVersion, VisioEdition, LastUsedDate, Error
+    }
+
+    $snapshotDir = if ([string]::IsNullOrEmpty($SnapshotDirectory)) { Get-SnapshotDirectory } else { $SnapshotDirectory }
+    if (-not (Test-Path $snapshotDir)) {
+        New-Item -ItemType Directory -Path $snapshotDir -Force | Out-Null
+    }
+
+    $snapshotFile = Join-Path $snapshotDir "VisioAuditSnapshot_$(Get-Date -Format 'yyyyMMdd_HHmmss').json"
+    $summary | ConvertTo-Json -Depth 6 | Out-File -FilePath $snapshotFile -Encoding UTF8
+    Write-Host "[+] JSON snapshot saved: $snapshotFile" -ForegroundColor Green
+
+    if (-not [string]::IsNullOrEmpty($WebhookUrl)) {
+        try {
+            $jsonPayload = Get-Content -Path $snapshotFile -Raw
+            Invoke-RestMethod -Uri $WebhookUrl -Method Post -ContentType "application/json" -Body $jsonPayload -ErrorAction Stop | Out-Null
+            Write-Host "[+] Snapshot posted to webhook: $WebhookUrl" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "[-] Failed to POST snapshot: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    return $snapshotFile
+}
+
 function Find-UnusedVisio {
     param(
         [string]$ReportPath,
@@ -967,7 +1191,7 @@ function Select-ReportByDepartment {
 function Start-InteractiveMenu {
     do {
         Show-Menu
-        $choice = Read-Host "Enter selection (1-17)"
+        $choice = Read-Host "Enter selection (1-19)"
 
         switch ($choice) {
             "1" {
@@ -1120,6 +1344,27 @@ function Start-InteractiveMenu {
                     $reportPath = Get-DefaultOutputPath
                 }
                 Invoke-VisioHealthCheck -TaskName $taskName -ReportPath $reportPath -SampleCount $parsedSample
+                Pause
+            }
+            "18" {
+                Write-Host "`n[*] Access 397 remediation helper" -ForegroundColor Cyan
+                $computerInput = Read-Host "Computer names (comma-separated) or leave blank to scan OU"
+                $computerList = if (-not [string]::IsNullOrEmpty($computerInput)) {
+                    $computerInput -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+                }
+                $searchBase = Read-Host "LDAP SearchBase (optional, leave blank for entire domain)"
+                $prefix = Read-Host "Computer prefix (default: GOT)"
+                if ([string]::IsNullOrEmpty($prefix)) { $prefix = "GOT" }
+                $credential = Get-VisioScanCredential
+                Invoke-Access397Remediation -ComputerNames $computerList -SearchBase $searchBase -ComputerPrefix $prefix -ScanCredential $credential
+                Pause
+            }
+            "19" {
+                Write-Host "`n[*] Exporting JSON snapshot" -ForegroundColor Cyan
+                $reportPath = Read-Host "Report folder (default Output\\VisioAudit)"
+                if ([string]::IsNullOrEmpty($reportPath)) { $reportPath = Get-DefaultOutputPath }
+                $webhook = Read-Host "Webhook URL to POST snapshot (optional)"
+                Export-VisioAuditSnapshot -ReportPath $reportPath -WebhookUrl $webhook
                 Pause
             }
             default {

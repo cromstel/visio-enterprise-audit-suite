@@ -254,6 +254,8 @@ Recommended weekly workflow:
 ### Access denied errors
 - Run elevated PowerShell.
 - Validate endpoint admin rights and remote management permissions.
+- Use `Visio-Helper-Utils.ps1` option 18 to remediate Access 397 hosts (LocalAccountTokenFilterPolicy, WMI firewall, PSRemoting) and capture the remediation report for later review.
+- Use `Visio-Helper-Utils.ps1` option 19 to export today's audit results as a JSON snapshot and optionally post the payload to a REST endpoint for dashboards/automation.
 - Supply a local admin credential via `-ScanCredential` or use `Visio-Helper-Utils.ps1` option 15/13 to cache the credential and review the Access 397 guidance before rerunning the audit.
 - Run `Office-Version-Detector.ps1` on an impacted host to confirm Microsoft 365 Apps 10.0.60910 or Visio 2016 (Standard/Professional) installs via MSI/uninstall keys (this script no longer relies on Click-to-Run registry paths).
 - Expect Access 397 hosts to fall back to the remote helper script, which now collects `VisioVersion` and `VisioEdition` metadata so the CSV still reports Professional/Standard installs even when CIM/WMI is blocked.
@@ -278,3 +280,4 @@ This guide reflects current repository behavior including:
 - `CurrentUser` tracking
 - `LastUsageSource` tracking with source precedence
 - MSI/uninstall based detection for Microsoft 365 Apps 10.0.60910 and Visio 2016 Professional/Standard (Click-to-Run keys are not read).
+- JSON snapshot exports (option 19) and Access 397 remediation flows (option 18) are part of the helper utilities, allowing automation hooks to consume the audit metadata without parsing HTML.

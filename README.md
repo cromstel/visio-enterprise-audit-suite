@@ -171,6 +171,9 @@ Access error 397 indicates CIM/WMI communication is blocked; run `Visio-Helper-U
 
 Enabling `LocalAccountTokenFilterPolicy` stops Windows from stripping the remote token from the local account, while the firewall rule and PSRemoting ensure `Invoke-Command` can connect. Run these commands per host or push via Group Policy before the audit.
 
+**New helpers:**  
+Run `.\Visio-Helper-Utils.ps1` option 18 to remediate Access 397 in bulk (LocalAccountTokenFilterPolicy, WMI firewall, PSRemoting) and save a JSON report of the changes. Use option 19 to dump a lightweight JSON snapshot of the latest audit output and optionally post it to a webhook-ready API so downstream tooling can ingest the counts/errors/output paths.
+
 ---
 
 ## Quick Start
