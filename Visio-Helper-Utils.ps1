@@ -290,10 +290,10 @@ function Send-ReportNotification {
         [string]$ReportPath,
         [string]$Recipients = "",
         [string]$SmtpServer = "smtp.company.com",
-        [string]$WebhookUrl,
-        [string]$Subject = "Weekly Visio Installation Audit Report",
-        [switch]$IncludeAttachments = $true,
-        [switch]$UseZip
+    [string]$WebhookUrl,
+    [string]$Subject = "Weekly Visio Installation Audit Report",
+    [switch]$IncludeAttachments,
+    [switch]$UseZip
     )
 
     $files = Get-LatestAuditReportFiles -ReportPath $ReportPath
@@ -321,7 +321,13 @@ function Send-ReportNotification {
 "@
 
     $attachments = @()
-    if ($IncludeAttachments) {
+    $includeAttachments = if ($PSBoundParameters.ContainsKey('IncludeAttachments')) {
+        $IncludeAttachments.IsPresent
+    }
+    else {
+        $true
+    }
+    if ($includeAttachments) {
         if ($UseZip) {
             $zipPath = Join-Path $env:TEMP "VisioAuditReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
             Compress-Archive -Path @($files.Csv, $files.Html) -DestinationPath $zipPath -Force
