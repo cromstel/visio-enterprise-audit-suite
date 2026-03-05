@@ -333,17 +333,18 @@ visio-enterprise-audit-suite/
 ## ⚙️ Advanced Features
 
 ### Scheduled Automation
-Create weekly automated scans:
+Create weekly automated scans with option 9:
 ```powershell
 .\Visio-Helper-Utils.ps1
-# Select option 9: Create Scheduled Task
+# Select option 9: Schedule Recurring Audit
 ```
+The helper builds a scheduled task (runs as SYSTEM) and preserves the configured prefix/thread count + LDAP search scope. Use option 14 to inspect the scheduled task status later.
 
-### Email Reports
-Send reports automatically:
+### Email & Webhook Notifications
+Option 8 now sends the latest CSV/HTML reports to email recipients and allows posting a summary to Teams/Slack webhooks. Attachments can be zipped before sending, and the helper reports totals/errors inline.
 ```powershell
 .\Visio-Helper-Utils.ps1
-# Select option 8: Send Report via Email
+# Select option 8: Send Report Notification (email + webhook)
 ```
 
 ### Excel Export

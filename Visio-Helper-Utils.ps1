@@ -56,12 +56,13 @@ function Show-Menu {
     Write-Host "5.  New Cost Analysis" -ForegroundColor Yellow
     Write-Host "6.  View Last Report Summary" -ForegroundColor Yellow
     Write-Host "7.  Compare Two Reports (detect changes)" -ForegroundColor Yellow
-    Write-Host "8.  Send Report via Email" -ForegroundColor Yellow
-    Write-Host "9.  Create Scheduled Task" -ForegroundColor Yellow
+    Write-Host "8.  Send Report Notification (Email + Webhook)" -ForegroundColor Yellow
+    Write-Host "9.  Schedule Recurring Audit" -ForegroundColor Yellow
     Write-Host "10. Select Report by Department" -ForegroundColor Yellow
     Write-Host "11. Generate Department Summary" -ForegroundColor Yellow
     Write-Host "12. Exit" -ForegroundColor Yellow
     Write-Host "13. Show Access Error 397 Guidance" -ForegroundColor Yellow
+    Write-Host "14. Show Scheduled Task Status" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -112,6 +113,241 @@ function Invoke-UsageAnalytics {
 
     & "$scriptPath\visio-Usage-analytics.ps1" @analyticsArgs
     Write-Host "[+] Usage analytics complete." -ForegroundColor Green
+}
+
+function Get-LatestAuditReportFiles {
+    param(
+        [string]$ReportPath
+    )
+
+    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if ([string]::IsNullOrEmpty($ReportPath)) {
+        $ReportPath = "$scriptPath\Output\VisioAudit"
+    }
+
+    $latestCsv = Get-ChildItem -Path $ReportPath -Filter "VisioAudit_*.csv" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $latestHtml = Get-ChildItem -Path $ReportPath -Filter "VisioAudit_*.html" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+    return [PSCustomObject]@{
+        Csv = if ($latestCsv) { $latestCsv.FullName } else { $null }
+        Html = if ($latestHtml) { $latestHtml.FullName } else { $null }
+    }
+}
+
+function Send-ReportEmail {
+    param(
+        [string]$Recipients = "it-admin@company.com",
+        [string]$SmtpServer = "smtp.company.com",
+        [string]$Subject = "Weekly Visio Installation Audit Report",
+        [string]$Body = "",
+        [string[]]$Attachments = @()
+    )
+
+    if (-not $Recipients) {
+        Write-Host "[-] No recipients provided for email" -ForegroundColor Red
+        return
+    }
+
+    $emailParams = @{
+        To          = $Recipients -split "[,;]" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+        From        = "visio-audit@$([System.Net.Dns]::GetHostName())"
+        Subject     = $Subject
+        Body        = $Body
+        BodyAsHtml  = $true
+        SmtpServer  = $SmtpServer
+    }
+
+    if ($Attachments.Count -gt 0) {
+        $emailParams.Attachments = $Attachments
+    }
+
+    try {
+        Send-MailMessage @emailParams -ErrorAction Stop
+        Write-Host "[+] Email notification queued to: $Recipients" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "[-] Failed to send email: $_" -ForegroundColor Red
+    }
+}
+
+function Invoke-ReportWebhook {
+    param(
+        [string]$WebhookUrl,
+        [string]$Summary,
+        [string]$Title = "Visio Audit Report"
+    )
+
+    if ([string]::IsNullOrEmpty($WebhookUrl)) {
+        Write-Host "[-] Webhook URL is empty; skipping webhook notification" -ForegroundColor Yellow
+        return
+    }
+
+    $payload = @{
+        title = $Title
+        text  = $Summary
+    } | ConvertTo-Json -Depth 3
+
+    try {
+        Invoke-RestMethod -Uri $WebhookUrl -Method Post -ContentType "application/json" -Body $payload -ErrorAction Stop | Out-Null
+        Write-Host "[+] Webhook notification sent" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "[-] Webhook notification failed: $_" -ForegroundColor Red
+    }
+}
+
+function Send-ReportNotification {
+    param(
+        [string]$ReportPath,
+        [string]$Recipients = "",
+        [string]$SmtpServer = "smtp.company.com",
+        [string]$WebhookUrl,
+        [string]$Subject = "Weekly Visio Installation Audit Report",
+        [switch]$IncludeAttachments = $true,
+        [switch]$UseZip
+    )
+
+    $files = Get-LatestAuditReportFiles -ReportPath $ReportPath
+
+    if (-not $files.Csv -or -not $files.Html) {
+        Write-Host "[-] No reports found in $ReportPath" -ForegroundColor Red
+        return
+    }
+
+    $csvData = Import-Csv -Path $files.Csv -ErrorAction SilentlyContinue
+    $total = $csvData.Count
+    $visioInstalls = ($csvData | Where-Object { $_.VisioInstalled -eq "Yes" }).Count
+    $withVisioOffline = ($csvData | Where-Object { $_.VisioInstalled -eq "Yes" -and $_.IsOnline -eq "No" }).Count
+    $errors = ($csvData | Where-Object { $_.Error -and $_.Error -ne "None" }).Count
+
+    $body = @"
+<p>Visio audit report generated on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
+<ul>
+  <li>Total computers scanned: $total</li>
+  <li>Visio installations: $visioInstalls</li>
+  <li>Visio offline counts: $withVisioOffline</li>
+  <li>Access errors: $errors</li>
+</ul>
+<p>HTML report attached: $(Split-Path $files.Html -Leaf)</p>
+</ul>
+"@
+
+    $attachments = @()
+    if ($IncludeAttachments) {
+        if ($UseZip) {
+            $zipPath = Join-Path $env:TEMP "VisioAuditReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
+            Compress-Archive -Path @($files.Csv, $files.Html) -DestinationPath $zipPath -Force
+            $attachments += $zipPath
+        }
+        else {
+            $attachments += $files.Html
+            $attachments += $files.Csv
+        }
+    }
+
+    if ($Recipients) {
+        Send-ReportEmail -Recipients $Recipients -SmtpServer $SmtpServer -Subject $Subject -Body $body -Attachments $attachments
+    }
+    elseif (-not $WebhookUrl) {
+        Write-Host "[-] No recipients or webhook defined; no notification sent" -ForegroundColor Yellow
+    }
+
+    if ($WebhookUrl) {
+        $summary = "Total: $total | Visio: $visioInstalls | Offline: $withVisioOffline | Errors: $errors"
+        Invoke-ReportWebhook -WebhookUrl $WebhookUrl -Summary $summary -Title $Subject
+    }
+}
+
+function New-ScheduledAudit {
+    param(
+        [ValidateSet("Daily", "Weekly", "Monthly")]
+        [string]$Frequency = "Weekly",
+
+        [ValidateSet("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")]
+        [string]$DayOfWeek = "Sunday",
+
+        [int]$Hour = 2,
+        [int]$ThreadCount = 10,
+        [string]$ComputerPrefix = "GOT",
+        [string]$SearchBase,
+        [string]$OutputPath
+    )
+
+    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if ([string]::IsNullOrEmpty($OutputPath)) {
+        $OutputPath = "$scriptPath\Output\VisioAudit"
+    }
+
+    $taskActionArgs = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "$scriptPath\visio-enterprise-audit.ps1",
+        "-ThreadCount", $ThreadCount,
+        "-ComputerPrefix", $ComputerPrefix,
+        "-OutputPath", $OutputPath
+    )
+
+    if ($SearchBase) {
+        $taskActionArgs += "-SearchBase"
+        $taskActionArgs += "`"$SearchBase`""
+    }
+
+    $quotedActionArgs = $taskActionArgs | ForEach-Object {
+        if ($_ -match '\s') {
+            "`"$_`""
+        }
+        else {
+            $_
+        }
+    }
+
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($quotedActionArgs -join " ")
+
+    $taskTime = "{0:D2}:00" -f [math]::Max(0, [math]::Min(23, $Hour))
+
+    $trigger = switch ($Frequency) {
+        "Daily"   { New-ScheduledTaskTrigger -Daily -At $taskTime }
+        "Weekly"  { New-ScheduledTaskTrigger -Weekly -DaysOfWeek $DayOfWeek -At $taskTime }
+        "Monthly" { New-ScheduledTaskTrigger -Monthly -DaysOfMonth 1 -At $taskTime }
+    }
+
+    $taskName = "VisioAudit-$Frequency"
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
+
+    try {
+        Register-ScheduledTask -TaskName $taskName -Trigger $trigger -Action $action -Settings $settings -Principal $principal -Force
+        Write-Host "[+] Scheduled task registered: $taskName" -ForegroundColor Green
+        Write-Host "    Frequency: $Frequency" -ForegroundColor Cyan
+        Write-Host "    Day/Time : $($DayOfWeek) @ $taskTime" -ForegroundColor Cyan
+        Write-Host "    Threads  : $ThreadCount" -ForegroundColor Cyan
+        Write-Host "    SearchBase: $($SearchBase -or 'Full domain')" -ForegroundColor Cyan
+    }
+    catch {
+        Write-Host "[-] Unable to register scheduled task: $_" -ForegroundColor Red
+    }
+}
+
+function Show-ScheduledAuditStatus {
+    param(
+        [string]$TaskName = "VisioAudit-Weekly"
+    )
+
+    try {
+        $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+        $lastRun = $task.LastRunTime
+        $nextRun = $task.NextRunTime
+        $result = $task.LastTaskResult
+        Write-Host "`nScheduled Task: $TaskName" -ForegroundColor Cyan
+        Write-Host "  Next Run : $nextRun" -ForegroundColor Green
+        Write-Host "  Last Run : $lastRun" -ForegroundColor Yellow
+        Write-Host "  Last Result: $result" -ForegroundColor Yellow
+    }
+    catch {
+        Write-Host "[-] Unable to retrieve task status: $_" -ForegroundColor Red
+    }
 }
 
 function Show-AccessErrorGuidance {
@@ -511,7 +747,7 @@ function Select-ReportByDepartment {
 function Start-InteractiveMenu {
     do {
         Show-Menu
-        $choice = Read-Host "Enter selection (1-12)"
+        $choice = Read-Host "Enter selection (1-14)"
 
         switch ($choice) {
             "1" {
@@ -544,22 +780,51 @@ function Start-InteractiveMenu {
                 Pause
             }
             "8" {
-                $recipients = Read-Host "Email recipients (comma-separated)"
-                Send-EmailReport -Recipients $recipients
+                Write-Host "`n[*] Prepare report notification" -ForegroundColor Cyan
+                $reportPath = Read-Host "Report folder (default: Output\VisioAudit)"
+                if ([string]::IsNullOrEmpty($reportPath)) {
+                    $reportPath = "$((if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }))\Output\VisioAudit"
+                }
+                $recipients = Read-Host "Email recipients (comma-separated, leave blank to skip)"
+                $smtpServer = Read-Host "SMTP server (default: smtp.company.com)"
+                if ([string]::IsNullOrEmpty($smtpServer)) { $smtpServer = "smtp.company.com" }
+                $subject = Read-Host "Email subject (default: Visio audit summary)"
+                if ([string]::IsNullOrEmpty($subject)) { $subject = "Visio Installation Audit Report" }
+                $useZip = Read-Host "Compress attachments into a ZIP? (Y/N)"
+                $webhook = Read-Host "Optional webhook URL (leave blank to skip)"
+                $zipSwitch = $useZip -match '^[Yy]'
+                if ($zipSwitch) {
+                    Send-ReportNotification -ReportPath $reportPath -Recipients $recipients -SmtpServer $smtpServer -Subject $subject -WebhookUrl $webhook -IncludeAttachments -UseZip
+                }
+                else {
+                    Send-ReportNotification -ReportPath $reportPath -Recipients $recipients -SmtpServer $smtpServer -Subject $subject -WebhookUrl $webhook -IncludeAttachments
+                }
                 Pause
             }
             "9" {
-                Write-Host "`n1. Daily"
+                Write-Host "`n[*] Schedule recurring Visio audit" -ForegroundColor Cyan
+                Write-Host "1. Daily"
                 Write-Host "2. Weekly"
                 Write-Host "3. Monthly"
                 $freq = Read-Host "Select frequency"
                 $freqMap = @{ "1" = "Daily"; "2" = "Weekly"; "3" = "Monthly" }
-                if ($freqMap.ContainsKey($freq)) {
-                    New-ScheduledAudit -Frequency $freqMap[$freq]
+                if (-not $freqMap.ContainsKey($freq)) {
+                    Write-Host "Invalid selection, choose 1/2/3" -ForegroundColor Red
+                    Pause
+                    break
                 }
-                else {
-                    Write-Host "Invalid frequency selection. Please choose 1, 2, or 3." -ForegroundColor Red
-                }
+                $hour = Read-Host "Hour of day (0-23, default 2)"
+                [int]$parsedHour = 2
+                if (-not [int]::TryParse($hour, [ref]$parsedHour)) { $parsedHour = 2 }
+                $day = Read-Host "Day of week for weekly schedule (default Sunday)"
+                if ([string]::IsNullOrEmpty($day)) { $day = "Sunday" }
+                $threads = Read-Host "Thread count (1-64, default 10)"
+                [int]$parsedThreads = 10
+                if (-not [int]::TryParse($threads, [ref]$parsedThreads)) { $parsedThreads = 10 }
+                $prefix = Read-Host "Computer prefix (default GOT)"
+                if ([string]::IsNullOrEmpty($prefix)) { $prefix = "GOT" }
+                $searchBase = Read-Host "LDAP SearchBase (leave blank for domain)"
+                New-ScheduledAudit -Frequency $freqMap[$freq] -Hour $parsedHour -DayOfWeek $day -ThreadCount $parsedThreads -ComputerPrefix $prefix -SearchBase $searchBase
                 Pause
             }
             "10" {
@@ -598,6 +863,12 @@ function Start-InteractiveMenu {
             }
             "13" {
                 Show-AccessErrorGuidance
+                Pause
+            }
+            "14" {
+                $taskName = Read-Host "Scheduled task name (default VisioAudit-Weekly)"
+                if ([string]::IsNullOrEmpty($taskName)) { $taskName = "VisioAudit-Weekly" }
+                Show-ScheduledAuditStatus -TaskName $taskName
                 Pause
             }
             default {

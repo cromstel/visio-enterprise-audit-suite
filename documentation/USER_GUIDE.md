@@ -187,7 +187,12 @@ Provides menu-driven actions for:
 - Comparing latest two reports
 - Cost analysis
 - Department filtering
-- Optional scheduled task/email helpers
+- Scheduled automation + notification helpers
+
+Key helper menu options:
+- **Option 8:** Send Report Notification (email recipients + optional webhook + zipped attachments)
+- **Option 9:** Schedule Recurring Audit (frequency, hour, prefix, SearchBase)
+- **Option 14:** Show Scheduled Task Status (next run/last result)
 
 ## 10. Office Detector
 
