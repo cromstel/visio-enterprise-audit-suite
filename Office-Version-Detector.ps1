@@ -5,8 +5,8 @@
 .DESCRIPTION
     This script performs version detection for Microsoft Office installations by checking
     registry keys for both Click-to-Run (C2R) and Windows Installer (MSI) installations.
-    It specifically identifies Office 365 and Office 2019 installations while rejecting
-    all other versions (Office 2016, 2013, 2010, etc.).
+    It specifically identifies Office 365, Office 2019, and Office 2016 installations while rejecting
+    older versions (Office 2013, 2010, etc.).
 
     The script supports:
     - Office 365/Microsoft 365 detection via Click-to-Run
@@ -82,6 +82,7 @@ param(
 # Supported Office version identifiers
 [string[]]$script:Office365Identifiers = @("O365", "Microsoft 365 Apps", "Microsoft 365 Apps for enterprise", "Microsoft 365", "365")
 [string[]]$script:Office2019Identifiers = @("2019")
+[string[]]$script:Office2016Identifiers = @("2016", "Visio 2016", "Office 2016")
 
 #endregion
 
@@ -474,6 +475,16 @@ function Test-OfficeVersionValidation {
                 return $result
             }
         }
+        
+        # Check for Office 2016-specific identifiers
+        foreach ($identifier in $script:Office2016Identifiers) {
+            if ($ProductName -match $identifier) {
+                $result.IsSupported = $true
+                $result.OfficeType = "Office 2016"
+                Write-LogMessage -Message "Identified as Office 2016" -Level INFO -FunctionName "Test-OfficeVersionValidation"
+                return $result
+            }
+        }
 
         if ($Version -match '^10\.0\.\d+') {
             $result.IsSupported = $true
@@ -482,8 +493,8 @@ function Test-OfficeVersionValidation {
             return $result
         }
 
-        # If we reach here with 16.0 version but no specific identifier, it could be Office 2016 or other
-        Write-LogMessage -Message "Version 16.0.x detected but no Office 365/2019 identifier found in: $ProductName" -Level WARNING -FunctionName "Test-OfficeVersionValidation"
+        # If we reach here with 16.0 version but no specific identifier, it could be another unsupported release
+        Write-LogMessage -Message "Version 16.0.x detected but no Office 365/2019/2016 identifier found in: $ProductName" -Level WARNING -FunctionName "Test-OfficeVersionValidation"
         return $result
         
     }

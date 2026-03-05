@@ -8,7 +8,7 @@
 
 .DESCRIPTION
     This script queries Active Directory for all computers, then uses WMI/Registry
-    to check for Visio installations. Supports Visio 2021, 2019, and Office 365.
+    to check for Visio installations. Supports Visio 2021, 2019, 2016, and Office 365.
     Generates CSV and HTML reports.
 
 .PARAMETER OutputPath
@@ -77,11 +77,11 @@ if ([string]::IsNullOrEmpty($SearchBase)) {
 
 # Visio installation paths for all supported versions
 $VisioPaths = @(
-    "C:\Program Files\Microsoft Office\root\Office16\VISIO.EXE",       # Office 365/2021/2019 x64
-    "C:\Program Files\Microsoft Office\root\Office15\VISIO.EXE",       # Visio 2019
+    "C:\Program Files\Microsoft Office\root\Office16\VISIO.EXE",       # Office 365/2021/2019/2016 x64
+    "C:\Program Files\Microsoft Office\root\Office15\VISIO.EXE",       # Visio 2019 (root)
     "C:\Program Files\Microsoft Office\Office16\VISIO.EXE",             # Standalone 2016/2019
     "C:\Program Files\Microsoft Office\Office15\VISIO.EXE",             # Visio 2019 Standalone
-    "C:\Program Files (x86)\Microsoft Office\root\Office16\VISIO.EXE",  # Office 365/2021/2019 x86
+    "C:\Program Files (x86)\Microsoft Office\root\Office16\VISIO.EXE",  # Office 365/2021/2019/2016 x86
     "C:\Program Files (x86)\Microsoft Office\root\Office15\VISIO.EXE",  # Visio 2019 x86
     "C:\Program Files (x86)\Microsoft Office\Office16\VISIO.EXE",       # Standalone x86
     "C:\Program Files (x86)\Microsoft Office\Office15\VISIO.EXE"        # Visio 2019 Standalone x86
@@ -89,11 +89,11 @@ $VisioPaths = @(
 
 # Registry paths for detecting all Office/Visio versions (x64 and x86)
 $RegistryPaths = @(
-    "HKLM:\Software\Microsoft\Office\16.0\Common\InstallRoot",                 # Office 365/2021/2019
-    "HKLM:\Software\Microsoft\Office\15.0\Common\InstallRoot",                  # Visio 2019
+    "HKLM:\Software\Microsoft\Office\16.0\Common\InstallRoot",                 # Office 365/2021/2019/2016
+    "HKLM:\Software\Microsoft\Office\15.0\Common\InstallRoot",                  # Visio 2019/2016
     "HKLM:\Software\Microsoft\Visio\InstallRoot",                                # Standalone Visio
-    "HKLM:\Software\Wow6432Node\Microsoft\Office\16.0\Common\InstallRoot",      # Office 365/2021/2019 x86
-    "HKLM:\Software\Wow6432Node\Microsoft\Office\15.0\Common\InstallRoot",      # Visio 2019 x86
+    "HKLM:\Software\Wow6432Node\Microsoft\Office\16.0\Common\InstallRoot",      # Office 365/2021/2019/2016 x86
+    "HKLM:\Software\Wow6432Node\Microsoft\Office\15.0\Common\InstallRoot",      # Visio 2019/2016 x86
     "HKLM:\Software\Wow6432Node\Microsoft\Visio\InstallRoot"                    # Standalone Visio x86
 )
 
@@ -600,7 +600,7 @@ function Invoke-VisioScan {
                             [int]::TryParse($versionParts[2], [ref]$revisionNumber) | Out-Null
                         }
 
-                        # Office 365/2021+ and the new 10.0.60910 builds should be treated as Professional
+                        # Office 365/2021+/2019/2016 builds (including 10.0.60910 naming) should be treated as Professional here
                         if ($revisionNumber -ge 13000 -or $buildNumber -ge 13000 -or $majorVersion -ge 16 -or $majorVersion -eq 10) {
                             $result.VisioEdition = "Professional"
                         }

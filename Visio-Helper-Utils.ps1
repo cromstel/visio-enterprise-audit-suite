@@ -5,7 +5,7 @@
 .SYNOPSIS
     Visio Audit Helper Utilities
     Common tasks and shortcuts for managing Visio audit data
-    Supports: Visio 2021 Standard/Professional, Visio 2019, Office 365 (x64/x86)
+    Supports: Visio 2021, 2019, 2016, and Office 365 (x64/x86)
 
 .DESCRIPTION
     Provides quick access to:
@@ -46,7 +46,7 @@ function Get-VisioScanCredential {
 function Show-Menu {
     Write-Host ("`n" + ("=" * 72)) -ForegroundColor Cyan
     Write-Host "VISIO ENTERPRISE AUDIT - HELPER UTILITIES" -ForegroundColor Cyan
-    Write-Host "Supports: Visio 2021/2019, Office 365, and local-admin credential prompts" -ForegroundColor Cyan
+    Write-Host "Supports: Visio 2021/2019/2016, Office 365, and local-admin credential prompts" -ForegroundColor Cyan
     Write-Host (("=" * 72)) -ForegroundColor Cyan
     Write-Host ""
     Write-Host "1.  Run Full Installation Audit" -ForegroundColor Yellow

@@ -7,7 +7,7 @@
     Tracks detailed Visio usage patterns and generates analytics
 
 .DESCRIPTION
-    Collects advanced usage metrics including:
+    Collects advanced usage metrics for Visio 2021/2019/2016 including:
     - Last user to run Visio
     - Number of Visio processes
     - Recent Visio documents
@@ -538,7 +538,7 @@ function Get-VisioConfiguration {
             $ComputerName
         )
 
-        # Visio 365/2019 options registry path
+        # Visio 365/2021/2019/2016 options registry path
         $path = "Software\Microsoft\Office\16.0\Visio\Options"
         $key = $regKey.OpenSubKey($path)
 

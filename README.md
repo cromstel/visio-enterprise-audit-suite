@@ -50,10 +50,10 @@ This suite contains PowerShell scripts for auditing Visio installations and dete
 
 ### Office-Version-Detector.ps1
 
-**Purpose:** Detects Microsoft Office installations and identifies if Office 365 or Office 2019 is installed.
+**Purpose:** Detects Microsoft Office installations and identifies if Office 365, Office 2019, or Office 2016 is installed.
 
 **Description:**
-This script performs version detection for Microsoft Office installations by checking registry keys for both Click-to-Run (C2R) and Windows Installer (MSI) installations. It specifically identifies Office 365 and Office 2019 installations while rejecting all other versions (Office 2016, 2013, 2010, etc.).
+This script performs version detection for Microsoft Office installations by checking registry keys for both Click-to-Run (C2R) and Windows Installer (MSI) installations. It specifically identifies Office 365, Office 2019, and Office 2016 installations while rejecting older versions (Office 2013, 2010, etc.).
 
 **Features:**
 - Registry-based detection for Click-to-Run (C2R) and MSI installations
@@ -81,8 +81,7 @@ This script performs version detection for Microsoft Office installations by che
 .\Office-Version-Detector.ps1 -StrictErrorHandling
 ```
 
-**Exit Codes:**
-- `0` - Success: Supported Office version detected (Office 365 or Office 2019)
+- `0` - Success: Supported Office version detected (Office 365, Office 2019, or Office 2016)
 - `1` - Error: Unsupported version detected or detection failed
 
 ---
@@ -92,10 +91,10 @@ This script performs version detection for Microsoft Office installations by che
 **Purpose:** Enterprise Visio Installation Audit Script - Scans all domain computers for Visio installations and last usage.
 
 **Description:**
-This script queries Active Directory for all computers, then uses WMI/Registry to check for Visio installations. Supports Office 365 and Office 2019 only (x64). Generates CSV and HTML reports.
+- This script queries Active Directory for all computers, then uses WMI/Registry to check for Visio installations. Supports Visio Professional/Standard 2016, 2019, and Office 365/2021 (x64). Generates CSV and HTML reports.
 
 **Features:**
-- x64-only support (Office 365/2019)
+- x64-only support (Office 365/2021/2019/2016)
 - Dynamic script path detection ($PSScriptRoot)
 - ComputerPrefix filtering (GOT* prefix by default)
 - Targeted OU search with configurable SearchBase
@@ -197,8 +196,8 @@ Reports automatically generated in the script's Output\VisioAudit directory:
 ## 📊 What Gets Scanned
 
 ✓ Office 365 Visio installations  
-✓ Office 2019 Visio  
-✓ x64-only support (Office 365/2019)  
+✓ Visio 2016 & 2019 Professional/Standard  
+✓ x64-only support (Office 365/2021/2019/2016)  
 ✓ Last used dates  
 ✓ Version information  
 ✓ Installation paths  
@@ -325,7 +324,7 @@ visio-enterprise-audit-suite/
 - Monitor Visio document access patterns
 
 ### Office Version Validation
-- Validate only Office 365/2019 installations
+- Validate only Office 365/2019/2016 installations
 - Reject unsupported Office versions
 - Generate compliance reports
 
@@ -429,4 +428,4 @@ That's it! Enjoy comprehensive Visio auditing! 🚀
 
 **Need help?** See `documentation/VISIO_AUDIT_GUIDE.md` for detailed documentation.
 
-Note: Office-Version-Detector now recognizes Microsoft 365 10.0.60910 (2408) Visio builds as supported Professional installs so the suite matches the audit logic.
+Note: Office-Version-Detector now recognizes Microsoft 365 10.0.60910 (2408) Visio builds and Office 2016 installs as supported Professional/Standard installs so the suite matches the audit logic.

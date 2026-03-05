@@ -34,6 +34,7 @@ It covers:
 
 ### `Office-Version-Detector.ps1`
 - Local machine Office detector.
+- Supports Office 365, Office 2019, and Office 2016 installations.
 - Returns exit code `0` for supported versions, `1` otherwise.
 
 ## 3. Prerequisites
@@ -256,4 +257,3 @@ This guide reflects current repository behavior including:
 - Professional ASCII-safe scan interface
 - `CurrentUser` tracking
 - `LastUsageSource` tracking with source precedence
-
