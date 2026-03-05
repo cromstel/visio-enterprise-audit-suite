@@ -47,7 +47,7 @@ function Save-VisioScanCredentialCache {
     $payload | ConvertTo-Json | Set-Content -Path $cachePath -Encoding UTF8
 }
 
-function Load-VisioScanCredentialCache {
+function Get-VisioScanCredentialCache {
     $cachePath = Get-CredentialCachePath
     if (-not (Test-Path $cachePath)) {
         return $null
@@ -90,7 +90,7 @@ function Get-VisioScanCredential {
         return $script:VisioScanCredential
     }
 
-    $cached = if (-not $Force) { Load-VisioScanCredentialCache } else { $null }
+    $cached = if (-not $Force) { Get-VisioScanCredentialCache } else { $null }
     if ($cached) {
         $script:VisioScanCredential = $cached
         Write-Host "[*] Loaded cached credential for $($cached.UserName)" -ForegroundColor Green
