@@ -126,15 +126,6 @@ $VisioUsageFallbackScript = {
             }
         }
 
-        if (Test-Path "HKLM:\Software\Microsoft\Office\ClickToRun\Configuration") {
-            $config = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Office\ClickToRun\Configuration" -ErrorAction SilentlyContinue
-            if ($config.Status) {
-                $usage.LicenseStatus = $config.Status
-            }
-            if ($config.LastUser) {
-                $usage.LastUserRun = $config.LastUser
-            }
-        }
     }
     catch {
         $usage.Error = "Fallback usage analysis failed: $_"
@@ -154,7 +145,6 @@ $VisioLicenseFallbackScript = {
 
     $licensePaths = @(
         "HKLM:\Software\Microsoft\Office\16.0\Common\Identity\Licenses",
-        "HKLM:\Software\Microsoft\Office\ClickToRun\Licensing"
     )
 
     foreach ($path in $licensePaths) {
@@ -481,8 +471,7 @@ function Get-Office365LicenseStatus {
 
         # Check Office 365 license registry paths
         $licensePaths = @(
-            "Software\Microsoft\Office\16.0\Common\Identity\Licenses",
-            "Software\Microsoft\Office\ClickToRun\Licensing"
+            "Software\Microsoft\Office\16.0\Common\Identity\Licenses"
         )
 
         foreach ($path in $licensePaths) {

@@ -53,10 +53,10 @@ This suite contains PowerShell scripts for auditing Visio installations and dete
 **Purpose:** Detects Microsoft Office installations and identifies if Office 365, Office 2019, or Office 2016 is installed.
 
 **Description:**
-This script performs version detection for Microsoft Office installations by checking registry keys for both Click-to-Run (C2R) and Windows Installer (MSI) installations. It specifically identifies Office 365, Office 2019, and Office 2016 installations while rejecting older versions (Office 2013, 2010, etc.).
+This script performs version detection for Microsoft Office installations by checking registry keys for Windows Installer (MSI) deployments. It specifically identifies Office 365, Office 2019, and Office 2016 installations while rejecting older versions (Office 2013, 2010, etc.).
 
 **Features:**
-- Registry-based detection for Click-to-Run (C2R) and MSI installations
+- Registry-based detection for MSI installations
 - Supports both 32-bit and 64-bit system detection
 - Detailed logging to console and file
 - Comprehensive error handling with strict mode option

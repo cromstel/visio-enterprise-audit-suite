@@ -4,13 +4,12 @@
 
 .DESCRIPTION
     This script performs version detection for Microsoft Office installations by checking
-    registry keys for both Click-to-Run (C2R) and Windows Installer (MSI) installations.
+    registry keys for Windows Installer (MSI) installations.
     It specifically identifies Office 365, Office 2019, and Office 2016 installations while rejecting
     older versions (Office 2013, 2010, etc.).
 
     The script supports:
-    - Office 365/Microsoft 365 detection via Click-to-Run
-    - Office 2019 detection via Click-to-Run and MSI
+    - Office 365/Microsoft 365 and Office 2016/2019 detection via MSI
     - Both 32-bit and 64-bit system detection
     - Detailed logging to console and file
 
@@ -74,10 +73,8 @@ param(
 [bool]$script:DetectionSuccessful = $false
 
 # Registry paths for Office detection
-[string]$script:RegistryPathClickToRun = "SOFTWARE\Microsoft\Office\ClickToRun\Configuration"
 [string]$script:RegistryPathOffice16 = "SOFTWARE\Microsoft\Office\16.0\Configuration"
 [string]$script:RegistryPathUninstall = "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
-[string]$script:RegistryPathWow6432 = "SOFTWARE\Wow6432Node\Microsoft\Office\ClickToRun\Configuration"
 
 # Supported Office version identifiers
 [string[]]$script:Office365Identifiers = @("O365", "Microsoft 365 Apps", "Microsoft 365 Apps for enterprise", "Microsoft 365", "365")
@@ -273,71 +270,8 @@ function Test-RegistryKey {
 
 <#
 .SYNOPSIS
-    Detects Office installation using Click-to-Run registry keys.
-
-.DESCRIPTION
-    Checks Office 365/2019 Click-to-Run installation paths in the registry
-    and extracts version and product information.
-
-.OUTPUTS
-    Hash table with detected version and product name, or $null if not detected.
-#>
-function Test-ClickToRunInstallation {
-    [CmdletBinding()]
-    param()
-    
-    Write-LogMessage -Message "Checking Click-to-Run installation detection" -Level INFO -FunctionName "Test-ClickToRunInstallation"
-    
-    # Define registry paths to check for Click-to-Run
-    [string[]]$clickToRunPaths = @(
-        "$script:RegistryPathClickToRun",           # Standard 64-bit
-        "$script:RegistryPathWow6432\$script:RegistryPathClickToRun"  # 32-bit on 64-bit
-    )
-    
-    foreach ($path in $clickToRunPaths) {
-        try {
-            # Check for required Click-to-Run values
-            [string]$version = Read-RegistryValue -Hive "HKLM" -KeyPath $path -ValueName "Version"
-            [string]$productName = Read-RegistryValue -Hive "HKLM" -KeyPath $path -ValueName "ProductName"
-            [string]$updateChannel = Read-RegistryValue -Hive "HKLM" -KeyPath $path -ValueName "UpdateChannel"
-            
-            # If version is found, this is a valid Click-to-Run installation
-            if (-not [string]::IsNullOrEmpty($version)) {
-                Write-LogMessage -Message "Found Click-to-Run installation at: $path" -Level DEBUG -FunctionName "Test-ClickToRunInstallation"
-                Write-LogMessage -Message "Version: $version, ProductName: $productName, UpdateChannel: $updateChannel" -Level DEBUG -FunctionName "Test-ClickToRunInstallation"
-                
-                # Return the detected values
-                @{
-                    Version = $version
-                    ProductName = $productName
-                    UpdateChannel = $updateChannel
-                    InstallationType = "Click-to-Run"
-                    RegistryPath = $path
-                }
-                return
-            }
-        }
-        catch {
-            Write-LogMessage -Message "Error checking Click-to-Run path $path : $($_.Exception.Message)" -Level DEBUG -FunctionName "Test-ClickToRunInstallation"
-            continue
-        }
-    }
-    
-    Write-LogMessage -Message "No Click-to-Run installation detected" -Level DEBUG -FunctionName "Test-ClickToRunInstallation"
-    return $null
-}
-
-<#
-.SYNOPSIS
     Detects Office installation using MSI registry keys.
-
-.DESCRIPTION
-    Checks Office MSI installation paths and the Windows Uninstall registry
-    for Office installations.
-
-.OUTPUTS
-    Hash table with detected version and product name, or $null if not detected.
-#>
+ 
 function Test-MSIInstallation {
     [CmdletBinding()]
     param()
@@ -632,21 +566,11 @@ function Start-OfficeDetection {
         [object]$detectionResult = $null
         [string]$detectionSource = $null
         
-        # Try Click-to-Run detection first (most common for Office 365/2019)
-        Write-LogMessage -Message "Step 1: Checking Click-to-Run installations..." -Level INFO -FunctionName "Start-OfficeDetection"
-        $detectionResult = Test-ClickToRunInstallation
-        
+        # Check MSI installations (legacy Office, Visio)
+        Write-LogMessage -Message "Checking MSI installations..." -Level INFO -FunctionName "Start-OfficeDetection"
+        $detectionResult = Test-MSIInstallation
         if ($null -ne $detectionResult) {
-            $detectionSource = "Click-to-Run"
-        }
-        else {
-            # Fall back to MSI detection
-            Write-LogMessage -Message "Step 2: Checking MSI installations..." -Level INFO -FunctionName "Start-OfficeDetection"
-            $detectionResult = Test-MSIInstallation
-            
-            if ($null -ne $detectionResult) {
-                $detectionSource = "MSI"
-            }
+            $detectionSource = "MSI"
         }
         
         # Process detection result
