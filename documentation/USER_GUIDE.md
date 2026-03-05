@@ -193,6 +193,18 @@ Key helper menu options:
 - **Option 8:** Send Report Notification (email recipients + optional webhook + zipped attachments)
 - **Option 9:** Schedule Recurring Audit (frequency, hour, prefix, SearchBase)
 - **Option 14:** Show Scheduled Task Status (next run/last result)
+- **Option 15:** Clear cached credential stored at `VisioScanCredential.txt` in the script root
+- **Option 16:** Cleanup Old Reports (default 30-day window, optional max files)
+- **Option 17:** Run Health Check (AD, WinRM, report, and scheduled task validation + dashboard)
+
+#### Credential Cache
+The cached credential is stored in `VisioScanCredential.txt` in the script root (encrypted via `ConvertFrom-SecureString`). Option 15 clears that file and forces the next audit/analytics run to prompt for a new credential.
+
+#### Report Retention
+Option 16 runs `Cleanup-OldReports` with the supplied age/file limits. The default is `-DaysToKeep 30`, which removes CSV/HTML pairs older than 30 days and logs the deleted filenames. Providing `-MaxFiles` keeps only the newest N files regardless of age.
+
+#### Health Check
+Option 17 executes `Invoke-VisioHealthCheck`, which validates AD reachability, WinRM connectivity (sampled from the latest report), the scheduled task status, and the presence of recent CSV/HTML files. It outputs PASS/WARN/FAIL statuses to the console and saves an HTML snapshot at `Output\VisioAudit\VisioHealthStatus.html` for review by automation or audit teams.
 
 ## 10. Office Detector
 

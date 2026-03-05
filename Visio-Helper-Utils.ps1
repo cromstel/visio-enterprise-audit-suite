@@ -21,19 +21,88 @@
 # ============================================================================
 [PSCredential]$script:VisioScanCredential = $null
 
+function Get-CredentialCachePath {
+    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    return Join-Path $scriptPath "VisioScanCredential.txt"
+}
+
+function Save-VisioScanCredentialCache {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCredential]$Credential
+    )
+
+    $cachePath = Get-CredentialCachePath
+    $cacheDir = Split-Path $cachePath
+    if (-not (Test-Path $cacheDir)) {
+        New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+    }
+
+    $payload = @{
+        UserName = $Credential.UserName
+        Password = $Credential.Password | ConvertFrom-SecureString
+        SavedAt  = (Get-Date).ToString("o")
+    }
+
+    $payload | ConvertTo-Json | Set-Content -Path $cachePath -Encoding UTF8
+}
+
+function Load-VisioScanCredentialCache {
+    $cachePath = Get-CredentialCachePath
+    if (-not (Test-Path $cachePath)) {
+        return $null
+    }
+
+    try {
+        $json = Get-Content -Path $cachePath -Raw -ErrorAction Stop
+        $payload = $json | ConvertFrom-Json
+        if ($payload.UserName -and $payload.Password) {
+            $secureString = $payload.Password | ConvertTo-SecureString
+            return New-Object System.Management.Automation.PSCredential($payload.UserName, $secureString)
+        }
+    }
+    catch {
+        Write-Host "[-] Unable to load cached credential: $_" -ForegroundColor Yellow
+    }
+    return $null
+}
+
+function Clear-VisioScanCredentialCache {
+    $cachePath = Get-CredentialCachePath
+    if (Test-Path $cachePath) {
+        Remove-Item -Path $cachePath -Force -ErrorAction SilentlyContinue
+    }
+    $script:VisioScanCredential = $null
+    Write-Host "[+] Cached credential cleared" -ForegroundColor Yellow
+}
+
 function Get-VisioScanCredential {
     [CmdletBinding()]
     param(
         [switch]$Force
     )
 
+    if ($Force) {
+        Clear-VisioScanCredentialCache
+    }
+
     if (-not $Force -and $script:VisioScanCredential) {
         return $script:VisioScanCredential
     }
 
-    $useAlt = Read-Host "Use an alternate local admin credential for remote scans? (Y/N)"
+    $cached = if (-not $Force) { Load-VisioScanCredentialCache } else { $null }
+    if ($cached) {
+        $script:VisioScanCredential = $cached
+        Write-Host "[*] Loaded cached credential for $($cached.UserName)" -ForegroundColor Green
+        return $cached
+    }
+
+    $useAlt = Read-Host "Enter local admin credential now? (Y/N)"
     if ($useAlt -match '^[Yy]') {
         $script:VisioScanCredential = Get-Credential -Message "Enter the local admin credential used by the audit"
+        if ($script:VisioScanCredential) {
+            Save-VisioScanCredentialCache -Credential $script:VisioScanCredential
+        }
     }
 
     return $script:VisioScanCredential
@@ -63,6 +132,9 @@ function Show-Menu {
     Write-Host "12. Exit" -ForegroundColor Yellow
     Write-Host "13. Show Access Error 397 Guidance" -ForegroundColor Yellow
     Write-Host "14. Show Scheduled Task Status" -ForegroundColor Yellow
+    Write-Host "15. Clear Cached Credential" -ForegroundColor Yellow
+    Write-Host "16. Cleanup Old Reports" -ForegroundColor Yellow
+    Write-Host "17. Run Health Check" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -215,6 +287,149 @@ function Send-ReportNotification {
         Write-Host "[-] No reports found in $ReportPath" -ForegroundColor Red
         return
     }
+
+function Cleanup-OldReports {
+    param(
+        [int]$DaysToKeep = 30,
+        [int]$MaxFiles = 0,
+        [string]$ReportPath
+    )
+
+    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if ([string]::IsNullOrEmpty($ReportPath)) {
+        $ReportPath = "$scriptPath\Output\VisioAudit"
+    }
+
+    $files = @()
+    $files += Get-ChildItem -Path $ReportPath -File -Filter "VisioAudit_*.csv" -ErrorAction SilentlyContinue
+    $files += Get-ChildItem -Path $ReportPath -File -Filter "VisioAudit_*.html" -ErrorAction SilentlyContinue
+    if (!$files) {
+        Write-Host "[*] No reports found in $ReportPath" -ForegroundColor Yellow
+        return
+    }
+
+    $removeList = @()
+    if ($DaysToKeep -gt 0) {
+        $cutoff = (Get-Date).AddDays(-$DaysToKeep)
+        $removeList += $files | Where-Object { $_.LastWriteTime -lt $cutoff }
+    }
+    if ($MaxFiles -gt 0) {
+        $recent = $files | Sort-Object -Property LastWriteTime -Descending | Select-Object -First $MaxFiles
+        $removeList += $files | Where-Object { $recent -notcontains $_ }
+    }
+
+    $toDelete = $removeList | Sort-Object -Unique
+    if (!$toDelete) {
+        Write-Host "[*] No files met the retention criteria" -ForegroundColor Green
+        return
+    }
+
+    foreach ($file in $toDelete) {
+        try {
+            Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+            Write-Host "[+] Removed: $($file.Name)" -ForegroundColor Yellow
+        }
+        catch {
+            Write-Host "[-] Failed to remove $($file.Name): $_" -ForegroundColor Red
+        }
+    }
+}
+
+function Invoke-VisioHealthCheck {
+    param(
+        [string]$TaskName = "VisioAudit-Weekly",
+        [string]$ReportPath,
+        [int]$SampleCount = 3
+    )
+
+    $scriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if ([string]::IsNullOrEmpty($ReportPath)) {
+        $ReportPath = "$scriptPath\Output\VisioAudit"
+    }
+
+    $status = [ordered]@{}
+
+    try {
+        Get-ADDomain -ErrorAction Stop > $null
+        $status.AD = "PASS"
+    }
+    catch {
+        $status.AD = "FAIL: $_"
+    }
+
+    $latest = Get-LatestAuditReportFiles -ReportPath $ReportPath
+    if ($latest.Csv) {
+        $status.Reporting = "PASS (CSV: $(Split-Path $latest.Csv -Leaf))"
+    }
+    else {
+        $status.Reporting = "MISSING"
+    }
+
+    try {
+        $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+        $status.ScheduledTask = "PASS (Next run: $($task.NextRunTime))"
+    }
+    catch {
+        $status.ScheduledTask = "WARN: $($_.Exception.Message)"
+    }
+
+    $winrmStatuses = @{}
+    if ($latest.Csv) {
+        try {
+            $reportData = Import-Csv -Path $latest.Csv -ErrorAction Stop
+            $targets = $reportData | Where-Object { $_.IsOnline -eq "Yes" } | Select-Object -ExpandProperty ComputerName -Unique | Select-Object -First $SampleCount
+        }
+        catch {
+            $targets = @()
+        }
+    }
+    else {
+        $targets = @()
+    }
+
+    if ($targets.Count -eq 0) {
+        $status.WinRM = "WARN: no online targets available"
+    }
+    else {
+        foreach ($target in $targets) {
+            try {
+                Test-WSMan -ComputerName $target -ErrorAction Stop | Out-Null
+                $winrmStatuses[$target] = "PASS"
+            }
+            catch {
+                $winrmStatuses[$target] = "FAIL: $_"
+            }
+        }
+        $status.WinRM = ($winrmStatuses.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }) -join "; "
+    }
+
+    Write-Host "`nVISIO HEALTH CHECK" -ForegroundColor Cyan
+    foreach ($key in $status.Keys) {
+        $value = $status[$key]
+        $color = if ($value -like "PASS*") { "Green" } elseif ($value -like "WARN*") { "Yellow" } else { "Red" }
+        Write-Host "$key: $value" -ForegroundColor $color
+    }
+
+    $dashboardPath = Join-Path $ReportPath "VisioHealthStatus.html"
+    $rows = $status.GetEnumerator() | ForEach-Object {
+        "<tr><td>$($_.Key)</td><td>$($_.Value)</td></tr>"
+    }
+
+    $html = @"
+<!DOCTYPE html>
+<html><head><meta charset='UTF-8'><title>Visio Health Check</title></head><body>
+<h2>Visio Health Check</h2>
+<table border='1' cellpadding='6'>
+<tr><th>Check</th><th>Status</th></tr>
+$($rows -join "`n")
+</table>
+<p>Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
+</body></html>
+"@
+
+    $html | Out-File -FilePath $dashboardPath -Encoding UTF8
+    Write-Host "[+] Health dashboard saved: $dashboardPath" -ForegroundColor Green
+}
 
     $csvData = Import-Csv -Path $files.Csv -ErrorAction SilentlyContinue
     $total = $csvData.Count
@@ -747,7 +962,7 @@ function Select-ReportByDepartment {
 function Start-InteractiveMenu {
     do {
         Show-Menu
-        $choice = Read-Host "Enter selection (1-14)"
+        $choice = Read-Host "Enter selection (1-17)"
 
         switch ($choice) {
             "1" {
@@ -869,6 +1084,37 @@ function Start-InteractiveMenu {
                 $taskName = Read-Host "Scheduled task name (default VisioAudit-Weekly)"
                 if ([string]::IsNullOrEmpty($taskName)) { $taskName = "VisioAudit-Weekly" }
                 Show-ScheduledAuditStatus -TaskName $taskName
+                Pause
+            }
+            "15" {
+                Clear-VisioScanCredentialCache
+                Pause
+            }
+            "16" {
+                $reportPath = Read-Host "Report folder (default Output\\VisioAudit)"
+                if ([string]::IsNullOrEmpty($reportPath)) {
+                    $reportPath = "$((if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }))\Output\VisioAudit"
+                }
+                $days = Read-Host "Keep reports for how many days? (default 30)"
+                [int]$parsedDays = 30
+                if (-not [int]::TryParse($days, [ref]$parsedDays)) { $parsedDays = 30 }
+                $maxFiles = Read-Host "Maximum files to keep (0 for no limit, default 0)"
+                [int]$parsedMax = 0
+                if (-not [int]::TryParse($maxFiles, [ref]$parsedMax)) { $parsedMax = 0 }
+                Cleanup-OldReports -ReportPath $reportPath -DaysToKeep $parsedDays -MaxFiles $parsedMax
+                Pause
+            }
+            "17" {
+                $taskName = Read-Host "Scheduled task name (default VisioAudit-Weekly)"
+                if ([string]::IsNullOrEmpty($taskName)) { $taskName = "VisioAudit-Weekly" }
+                $sampleCount = Read-Host "WinRM target sample count (default 3)"
+                [int]$parsedSample = 3
+                if (-not [int]::TryParse($sampleCount, [ref]$parsedSample)) { $parsedSample = 3 }
+                $reportPath = Read-Host "Report folder for health check (default Output\\VisioAudit)"
+                if ([string]::IsNullOrEmpty($reportPath)) {
+                    $reportPath = "$((if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }))\Output\VisioAudit"
+                }
+                Invoke-VisioHealthCheck -TaskName $taskName -ReportPath $reportPath -SampleCount $parsedSample
                 Pause
             }
             default {

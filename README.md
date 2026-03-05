@@ -338,14 +338,23 @@ Create weekly automated scans with option 9:
 .\Visio-Helper-Utils.ps1
 # Select option 9: Schedule Recurring Audit
 ```
-The helper builds a scheduled task (runs as SYSTEM) and preserves the configured prefix/thread count + LDAP search scope. Use option 14 to inspect the scheduled task status later.
+The helper builds a scheduled task (runs as SYSTEM) and preserves the configured prefix, thread count, LDAP scope, and intended start time. Use option 14 to inspect the task’s next/last run and verify success.
 
 ### Email & Webhook Notifications
-Option 8 now sends the latest CSV/HTML reports to email recipients and allows posting a summary to Teams/Slack webhooks. Attachments can be zipped before sending, and the helper reports totals/errors inline.
+Option 8 now bundles the latest audit CSV/HTML into email/webhook notifications, optionally zipping attachments before sending, and logs totals/errors inline.
 ```powershell
 .\Visio-Helper-Utils.ps1
 # Select option 8: Send Report Notification (email + webhook)
 ```
+
+### Credential Caching
+Option 15 caches the local admin credential in `VisioScanCredential.txt` in the script root, encrypted with DPAPI so only the current user can read it. Clear it via the same option if you need to rotate credentials or share the suite with another operator.
+
+### Report Retention
+Option 16 runs `Cleanup-OldReports` and removes CSV/HTML pairs older than 30 days (default) or beyond a custom file count. Use it manually or schedule a reminder so the `Output\VisioAudit` folder stays under control.
+
+### Health Check Dashboard
+Option 17 runs `Invoke-VisioHealthCheck`, validating AD connectivity, WinRM reachability, scheduled task health, and recent report availability, then writes `Output\VisioAudit\VisioHealthStatus.html` for a quick compliance snapshot.
 
 ### Excel Export
 Export to formatted Excel workbooks:
