@@ -9,80 +9,47 @@ Dim startPos, endPos, newName, fullNewPath
 
 Set fso = CreateObject("Scripting.FileSystemObject")
 
-WScript.Echo "=== SCRIPT START ==="
-WScript.Echo "Folder: " & folderPath
-WScript.Echo "Marker: " & marker
-
-' Check folder
-If Not fso.FolderExists(folderPath) Then
-  WScript.Echo "ERROR: Folder not found!"
-  WScript.Quit
-End If
+' Silent exit if folder missing
+If Not fso.FolderExists(folderPath) Then WScript.Quit
 
 Set folder = fso.GetFolder(folderPath)
 
 For Each file In folder.Files
 
-  WScript.Echo "----------------------------------"
-  WScript.Echo "Processing: " & file.Name
-
-  ' Only .dat files
-  If LCase(fso.GetExtensionName(file.Name)) = "dat" Then
-    WScript.Echo "✔ .dat file detected"
+  ' Only process .dat-related files (including .dat.xxx cases)
+  If InStr(1, LCase(file.Name), ".dat") > 0 Then
 
     ' Find marker
     startPos = InStr(1, file.Name, marker, vbTextCompare)
 
     If startPos > 0 Then
-      WScript.Echo "✔ Marker found at position: " & startPos
-
-      ' Find ".dat" after marker
+      
+      ' Find FIRST ".dat" after marker
       endPos = InStr(startPos, file.Name, ".dat", vbTextCompare)
 
       If endPos > 0 Then
-        WScript.Echo "✔ .dat found at position: " & endPos
-
+        
+        ' Extract clean filename: marker → end of ".dat"
         newName = Mid(file.Name, startPos, (endPos - startPos) + 4)
-        WScript.Echo "New name will be: " & newName
 
+        ' Rename only if needed
         If file.Name <> newName Then
-
+          
           fullNewPath = folder.Path & "\" & newName
 
+          ' Prevent overwrite
           If Not fso.FileExists(fullNewPath) Then
-            WScript.Echo "Renaming..."
-
             On Error Resume Next
             file.Name = newName
-
-            If Err.Number <> 0 Then
-              WScript.Echo "❌ ERROR renaming: " & Err.Description
-              Err.Clear
-            Else
-              WScript.Echo "✅ Renamed successfully"
-            End If
-
             On Error GoTo 0
-          Else
-            WScript.Echo "⚠ Skipped: target file already exists"
           End If
 
-        Else
-          WScript.Echo "ℹ Already clean, no rename needed"
         End If
 
-      Else
-        WScript.Echo "❌ .dat not found after marker"
       End If
 
-    Else
-      WScript.Echo "❌ Marker not found"
     End If
 
-  Else
-    WScript.Echo "⏭ Skipped (not .dat)"
   End If
 
 Next
-
-WScript.Echo "=== SCRIPT END ==="
