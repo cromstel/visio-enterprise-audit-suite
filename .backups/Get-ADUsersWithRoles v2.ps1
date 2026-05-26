@@ -2,7 +2,7 @@
 
 <#
 .SYNOPSIS
-    Extracts all ACTIVE users from OU=Users,OU=Users & Clients,OU=STO,OU=SE,DC=euro,DC=net,DC=intra
+    Extracts all ACTIVE users from OU=Users & Clients,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra
     along with every group they belong to, the resolved role per group, and permission-tracking metadata.
 
 .DESCRIPTION
@@ -19,10 +19,9 @@
       6. Writes a timestamped log alongside the CSV report.
 
 .PARAMETER OutputPath
-    Folder where the CSV report and log file are written. Defaults to the script directory.
-
-.PARAMETER SearchScope
-    Subtree (default) | OneLevel | Base
+    Folder where the CSV report, log file, and summary are written.
+    Defaults to the script's directory, or the current working directory if
+    the script is run from a console session without being saved to disk first.
 
 .PARAMETER MaxNestDepth
     Maximum recursion depth for nested group resolution. Default: 8.
@@ -43,26 +42,16 @@
 
 .NOTES
     Domain      : euro.net.intra
-    Target OU   : OU=Users,OU=Users & Clients,OU=STO,OU=SE,DC=euro,DC=net,DC=intra
+    Target OU   : OU=Users & Clients,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra
     Requires    : RSAT ActiveDirectory module  (Windows 10/11: Settings > Optional Features > RSAT)
     Permissions : Domain Read (standard user account is sufficient for most environments)
-    Version     : 3.0
+    Version     : 3.1
 #>
 
 [CmdletBinding()]
 param (
     [Parameter(Mandatory = $false)]
-    [ValidateScript({
-        if (-not (Test-Path $_ -PathType Container)) {
-            throw "OutputPath '$_' does not exist or is not a directory."
-        }
-        $true
-    })]
-    [string]$OutputPath = $PSScriptRoot,
-
-    [Parameter(Mandatory = $false)]
-    [ValidateSet('Base', 'OneLevel', 'Subtree')]
-    [string]$SearchScope = 'Subtree',
+    [string]$OutputPath = '',
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 15)]
@@ -72,6 +61,25 @@ param (
     [switch]$PermissionGroupsOnly
 )
 
+# ── Resolve OutputPath safely ──────────────────────────────────────────────────
+# $PSScriptRoot is empty when the script is run directly from a console session
+# or copy-pasted into ISE/VSCode without being saved first.
+# Resolution order: (1) explicit -OutputPath arg, (2) $PSScriptRoot if populated,
+# (3) $PWD (current working directory) as a guaranteed non-empty fallback.
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $OutputPath = if ($PSScriptRoot) { $PSScriptRoot } else { $PWD.Path }
+}
+
+if (-not (Test-Path $OutputPath -PathType Container)) {
+    throw "OutputPath '$OutputPath' does not exist or is not a directory."
+}
+
+# ── SearchScope is intentionally NOT a parameter ───────────────────────────────
+# Scope is hard-locked to OneLevel so the query is strictly limited to
+# OU=Users & Clients,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra
+# and never descends into any child OUs beneath it.
+$SearchScope = 'OneLevel'
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -79,7 +87,8 @@ $ErrorActionPreference = 'Stop'
 #  CONFIGURATION
 # ══════════════════════════════════════════════════════════════════
 $Script:Config = @{
-    # ── Target OU (euro.net.intra > SE > STO > Users & Clients > Users) ──
+    # ── Target OU (euro.net.intra > CRDF > SE > Users & Clients) ─────────────
+    # Scope is OneLevel — strictly this OU only, no child OUs are crawled.
     TargetOU        = 'OU=Users & Clients,OU=SE,OU=CRDF,DC=euro,DC=net,DC=intra'
     Domain          = 'euro.net.intra'
 
@@ -93,9 +102,9 @@ $Script:Config = @{
     Encoding        = 'UTF8'
 }
 
-$Script:ReportPath  = Join-Path $OutputPath $Script:Config.ReportName
-$Script:LogPath     = Join-Path $OutputPath $Script:Config.LogName
-$Script:SummaryPath = Join-Path $OutputPath $Script:Config.SummaryName
+$Script:ReportPath  = Join-Path -Path $OutputPath -ChildPath $Script:Config.ReportName
+$Script:LogPath     = Join-Path -Path $OutputPath -ChildPath $Script:Config.LogName
+$Script:SummaryPath = Join-Path -Path $OutputPath -ChildPath $Script:Config.SummaryName
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -699,7 +708,7 @@ function Write-Summary {
         "  Generated      : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
         "  Domain         : $($Script:Config.Domain)"
         "  Source OU      : $($Script:Config.TargetOU)"
-        "  Search Scope   : $SearchScope"
+        "  Search Scope   : OneLevel (strictly this OU only — no child OUs)"
         "  Max Nest Depth : $MaxNestDepth"
         "  Security Only  : $($PermissionGroupsOnly.IsPresent)"
         ''
@@ -755,7 +764,7 @@ function Write-Summary {
 # ══════════════════════════════════════════════════════════════════
 function Main {
     Write-Log '══════════════════════════════════════════════════' INFO
-    Write-Log ' AD Active Users — Permission & Role Report v3.0  ' INFO
+    Write-Log ' AD Active Users — Permission & Role Report v3.1  ' INFO
     Write-Log "  Domain    : $($Script:Config.Domain)"            INFO
     Write-Log "  Target OU : $($Script:Config.TargetOU)"          INFO
     Write-Log "  Output    : $OutputPath"                         INFO
