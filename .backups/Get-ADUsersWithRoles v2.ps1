@@ -708,7 +708,7 @@ function Write-Summary {
         "  Generated      : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
         "  Domain         : $($Script:Config.Domain)"
         "  Source OU      : $($Script:Config.TargetOU)"
-        "  Search Scope   : OneLevel (strictly this OU only — no child OUs)"
+        "  Search Scope   : OneLevel (strictly on this OU only)"
         "  Max Nest Depth : $MaxNestDepth"
         "  Security Only  : $($PermissionGroupsOnly.IsPresent)"
         ''
