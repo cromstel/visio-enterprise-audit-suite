@@ -21,7 +21,7 @@ Option Explicit
 '              and always remains the same: G086241FI0910175S04919W0-
 
 Dim folderPath
-folderPath = "C:\PROJECTS\BNP\demo files"
+folderPath = "C:\Users\Cardif Nordic\Desktop\demo files"
 
 ' Fixed prefix that will be removed from all matching filenames
 Const PREFIX_TO_REMOVE = "G086241FI0910175S04919W0-"
